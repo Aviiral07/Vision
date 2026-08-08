@@ -1,7 +1,19 @@
-# Frontend
+# Frontend - AI Damage Inspector
 
-This directory contains React codebase and UI components.
+Clean, simple React + Vite interface to test the FastAPI AI damage detection server (`backend/main.py`).
 
-## Structure
-- `/src`: Application source code (components, pages, styles, hooks)
-- `/public`: Static assets
+## Features
+- Server health status indicator.
+- Upload infrastructure images (JPG, PNG, WEBP).
+- Send image to `/analyze-infrastructure` endpoint.
+- Canvas detection visualizer for Cracks & Corrosion/Rust bounding boxes.
+- Summary counts & raw JSON output.
+
+## Running Locally
+
+```bash
+npm install
+npm run dev
+```
+
+The frontend will be available at `http://localhost:5173`.
