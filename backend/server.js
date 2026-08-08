@@ -9,41 +9,49 @@ const fs = require('fs');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// allow cross-origin requests for react frontend
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Folders Setup
+// setup upload directory if missing
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+if (!fs.existsSync(UPLOAD_DIR)) {
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+}
 app.use('/uploads', express.static(UPLOAD_DIR));
 
-// Multer Storage Configuration
+// multer config - restrict uploads to image mimetypes
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOAD_DIR),
   filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
 });
+
 const upload = multer({ 
   storage, 
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) cb(null, true);
-    else cb(new Error('Only image files are allowed'), false);
+    if (file.mimetype && file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      const err = new Error('Only image files are allowed');
+      err.status = 400; // send 400 bad request if user uploads pdf/docs
+      cb(err, false);
+    }
   }
 });
 
-// Database Setup
+// sqlite db initialization
 const DB_DIR = path.join(__dirname, 'db');
 if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
 const DB_PATH = path.join(DB_DIR, 'inspection.db');
 
 const db = new sqlite3.Database(DB_PATH, (err) => {
-  if (err) console.error('Database connection error:', err.message);
-  else console.log('Connected to SQLite database at', DB_PATH);
+  if (err) console.error('db connection error:', err.message);
+  else console.log('connected to sqlite db at', DB_PATH);
 });
 
-// Table Initializations
+// ensure tables exist
 db.serialize(() => {
-  // Users Table
   db.run(`
     CREATE TABLE IF NOT EXISTS Users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,7 +61,7 @@ db.serialize(() => {
     )
   `);
 
-  // Inspection Logs Table
+  // added severity column to log geometric risk
   db.run(`
     CREATE TABLE IF NOT EXISTS InspectionLogs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,18 +69,35 @@ db.serialize(() => {
       damage_type TEXT,
       confidence REAL,
       risk_score REAL,
+      severity TEXT,
       recommendation TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
 });
 
-// Routes
+// helper to calculate severity based on bbox area vs total img area
+function getGeometricSeverity(imgW, imgH, bboxW, bboxH) {
+  const w = parseFloat(imgW) || 0;
+  const h = parseFloat(imgH) || 0;
+  const bw = parseFloat(bboxW) || 0;
+  const bh = parseFloat(bboxH) || 0;
 
-// Health Check
+  const imgArea = w * h;
+  if (imgArea === 0) return 'Low';
+
+  const damageArea = bw * bh;
+  const pct = (damageArea / imgArea) * 100;
+
+  // rule: >25% critical, 10-25% medium, rest low
+  if (pct > 25) return 'Critical';
+  if (pct >= 10 && pct <= 25) return 'Medium';
+  return 'Low';
+}
+
+// routes
 app.get('/', (req, res) => res.send('Inspection backend is running.'));
 
-// User Registration
 app.post('/api/register', (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required.' });
@@ -84,7 +109,6 @@ app.post('/api/register', (req, res) => {
   });
 });
 
-// User Login
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required.' });
@@ -97,16 +121,29 @@ app.post('/api/login', (req, res) => {
   });
 });
 
-// Upload Inspection
+// handles image upload & saves calculated damage severity
 app.post('/api/upload-inspection', upload.single('image'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No image file uploaded.' });
 
-  const { damage_type, confidence, risk_score, recommendation } = req.body;
+  const { 
+    damage_type, 
+    confidence, 
+    risk_score, 
+    recommendation,
+    image_width,
+    image_height,
+    bbox_width,
+    bbox_height
+  } = req.body;
+
   const imagePath = `/uploads/${req.file.filename}`;
 
+  // calculate math severity
+  const severity = getGeometricSeverity(image_width, image_height, bbox_width, bbox_height);
+
   const insertSQL = `
-    INSERT INTO InspectionLogs (image_path, damage_type, confidence, risk_score, recommendation)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO InspectionLogs (image_path, damage_type, confidence, risk_score, severity, recommendation)
+    VALUES (?, ?, ?, ?, ?, ?)
   `;
 
   const params = [
@@ -114,6 +151,7 @@ app.post('/api/upload-inspection', upload.single('image'), (req, res) => {
     damage_type || null,
     confidence !== undefined ? parseFloat(confidence) : null,
     risk_score !== undefined ? parseFloat(risk_score) : null,
+    severity,
     recommendation || null,
   ];
 
@@ -124,22 +162,38 @@ app.post('/api/upload-inspection', upload.single('image'), (req, res) => {
       id: this.lastID,
       image_path: imagePath,
       damage_type,
-      confidence,
-      risk_score,
+      confidence: confidence !== undefined ? parseFloat(confidence) : null,
+      risk_score: risk_score !== undefined ? parseFloat(risk_score) : null,
+      severity: severity,
       recommendation,
     });
   });
 });
 
-// Inspection History
+// fetch inspection logs with optional query filters (severity & type)
 app.get('/api/history', (req, res) => {
-  db.all(`SELECT * FROM InspectionLogs ORDER BY created_at DESC`, [], (err, rows) => {
+  const { severity, type } = req.query;
+  let sql = `SELECT * FROM InspectionLogs WHERE 1=1`;
+  const params = [];
+
+  if (severity) {
+    sql += ` AND LOWER(severity) = LOWER(?)`;
+    params.push(severity);
+  }
+
+  if (type) {
+    sql += ` AND LOWER(damage_type) = LOWER(?)`;
+    params.push(type);
+  }
+
+  sql += ` ORDER BY created_at DESC`;
+
+  db.all(sql, params, (err, rows) => {
     if (err) return res.status(500).json({ error: 'Failed to fetch history.' });
     res.json(rows);
   });
 });
 
-// Summary Reports
 app.get('/api/reports', (req, res) => {
   const reportSQL = `
     SELECT
@@ -156,9 +210,10 @@ app.get('/api/reports', (req, res) => {
   });
 });
 
-// Error Handling Middleware
+// global error catch middleware (handles multer pdf rejection gracefully)
 app.use((err, req, res, next) => {
-  res.status(500).json({ error: err.message || 'Something went wrong.' });
+  const status = err.status || 400;
+  res.status(status).json({ error: err.message || 'Something went wrong.' });
 });
 
 app.listen(PORT, () => console.log(`Server running at http://localhost:${PORT}`));
