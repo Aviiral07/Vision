@@ -5,6 +5,7 @@ const cors = require('cors');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
+const axios = require('axios');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -76,6 +77,45 @@ db.serialize(() => {
   `);
 });
 
+// calls both Roboflow models (crack + corrosion) with the uploaded image
+async function detectDamage(imagePath) {
+  const imageBase64 = fs.readFileSync(imagePath, { encoding: 'base64' });
+  const apiKey = process.env.ROBOFLOW_API_KEY;
+
+  const callModel = (modelPath) =>
+    axios.post(
+      `https://serverless.roboflow.com/${modelPath}?api_key=${apiKey}`,
+      imageBase64,
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
+
+  // run both models in parallel; if one fails, don't let it kill the other
+  const [crackResult, rustResult] = await Promise.allSettled([
+    callModel('crack-and-crack/2'),
+    callModel('corrosion-yolov8/4'),
+  ]);
+
+  // DEBUG: log exactly what Roboflow sent back so we can see real errors
+  if (crackResult.status === 'fulfilled') {
+    console.log('CRACK MODEL RAW RESPONSE:', JSON.stringify(crackResult.value.data));
+  } else {
+    console.log('CRACK MODEL FAILED:', crackResult.reason?.response?.status, JSON.stringify(crackResult.reason?.response?.data || crackResult.reason.message));
+  }
+  if (rustResult.status === 'fulfilled') {
+    console.log('RUST MODEL RAW RESPONSE:', JSON.stringify(rustResult.value.data));
+  } else {
+    console.log('RUST MODEL FAILED:', rustResult.reason?.response?.status, JSON.stringify(rustResult.reason?.response?.data || rustResult.reason.message));
+  }
+
+  const crack_data = crackResult.status === 'fulfilled' ? crackResult.value.data : { predictions: [] };
+  const rust_data = rustResult.status === 'fulfilled' ? rustResult.value.data : { predictions: [] };
+
+  if (crackResult.status === 'rejected') console.error('Crack model error:', crackResult.reason.message);
+  if (rustResult.status === 'rejected') console.error('Rust model error:', rustResult.reason.message);
+
+  return { crack_data, rust_data };
+}
+
 // helper to calculate severity based on bbox area vs total img area
 function getGeometricSeverity(imgW, imgH, bboxW, bboxH) {
   const w = parseFloat(imgW) || 0;
@@ -93,6 +133,56 @@ function getGeometricSeverity(imgW, imgH, bboxW, bboxH) {
   if (pct > 25) return 'Critical';
   if (pct >= 10 && pct <= 25) return 'Medium';
   return 'Low';
+}
+
+// combines crack + rust predictions into damage_type, severity, confidence, risk_score, recommendation
+function buildInspectionSummary(crack_data, rust_data) {
+  const crackPreds = crack_data?.predictions || [];
+  const rustPreds = rust_data?.predictions || [];
+  const allPreds = [...crackPreds, ...rustPreds];
+
+  // damage type
+  let damage_type;
+  if (crackPreds.length && rustPreds.length) damage_type = 'Corrosion & Crack';
+  else if (crackPreds.length) damage_type = 'Crack';
+  else if (rustPreds.length) damage_type = 'Corrosion';
+  else damage_type = 'Healthy';
+
+  // highest confidence among all detections (as a fraction, e.g. 0.87)
+  const confidence = allPreds.length
+    ? Math.max(...allPreds.map((p) => p.confidence || 0))
+    : null;
+
+  // image dims come back from Roboflow on each response (image_data.width/height)
+  const imgW = crack_data?.image?.width || rust_data?.image?.width || 0;
+  const imgH = crack_data?.image?.height || rust_data?.image?.height || 0;
+  const imgArea = imgW * imgH;
+
+  let severity = 'None';
+  let riskPct = 0;
+
+  if (imgArea > 0 && allPreds.length) {
+    const totalDamageArea = allPreds.reduce((sum, p) => sum + (p.width || 0) * (p.height || 0), 0);
+    riskPct = (totalDamageArea / imgArea) * 100;
+    if (riskPct > 25) severity = 'Critical';
+    else if (riskPct >= 10) severity = 'Medium';
+    else severity = 'Low';
+  }
+
+  const recommendationMap = {
+    Critical: 'Immediate repair required.',
+    Medium: 'Schedule inspection and repair soon.',
+    Low: 'Monitor periodically, no urgent action needed.',
+    None: 'No damage detected.',
+  };
+
+  return {
+    damage_type,
+    confidence,
+    severity,
+    risk_score: Number(riskPct.toFixed(2)),
+    recommendation: recommendationMap[severity],
+  };
 }
 
 // routes
@@ -121,39 +211,29 @@ app.post('/api/login', (req, res) => {
   });
 });
 
-// handles image upload & saves calculated damage severity
-app.post('/api/upload-inspection', upload.single('image'), (req, res) => {
+// handles image upload -> runs Roboflow detection -> saves calculated damage severity
+app.post('/api/upload-inspection', upload.single('image'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No image file uploaded.' });
 
-  const { 
-    damage_type, 
-    confidence, 
-    risk_score, 
-    recommendation,
-    image_width,
-    image_height,
-    bbox_width,
-    bbox_height
-  } = req.body;
-
   const imagePath = `/uploads/${req.file.filename}`;
+  const absolutePath = path.join(UPLOAD_DIR, req.file.filename);
 
-  // calculate math severity
-  const severity = getGeometricSeverity(image_width, image_height, bbox_width, bbox_height);
+  let crack_data, rust_data;
+  try {
+    ({ crack_data, rust_data } = await detectDamage(absolutePath));
+  } catch (err) {
+    return res.status(502).json({ error: 'AI detection failed.', details: err.message });
+  }
+
+  const { damage_type, confidence, severity, risk_score, recommendation } =
+    buildInspectionSummary(crack_data, rust_data);
 
   const insertSQL = `
     INSERT INTO InspectionLogs (image_path, damage_type, confidence, risk_score, severity, recommendation)
     VALUES (?, ?, ?, ?, ?, ?)
   `;
 
-  const params = [
-    imagePath,
-    damage_type || null,
-    confidence !== undefined ? parseFloat(confidence) : null,
-    risk_score !== undefined ? parseFloat(risk_score) : null,
-    severity,
-    recommendation || null,
-  ];
+  const params = [imagePath, damage_type, confidence, risk_score, severity, recommendation];
 
   db.run(insertSQL, params, function (err) {
     if (err) return res.status(500).json({ error: 'Failed to save inspection record.' });
@@ -162,10 +242,11 @@ app.post('/api/upload-inspection', upload.single('image'), (req, res) => {
       id: this.lastID,
       image_path: imagePath,
       damage_type,
-      confidence: confidence !== undefined ? parseFloat(confidence) : null,
-      risk_score: risk_score !== undefined ? parseFloat(risk_score) : null,
-      severity: severity,
+      confidence,
+      risk_score,
+      severity,
       recommendation,
+      detections: { cracks: crack_data, rust: rust_data },
     });
   });
 });
