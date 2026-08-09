@@ -236,7 +236,10 @@ app.post('/api/upload-inspection', upload.single('image'), async (req, res) => {
   const params = [imagePath, damage_type, confidence, risk_score, severity, recommendation];
 
   db.run(insertSQL, params, function (err) {
-    if (err) return res.status(500).json({ error: 'Failed to save inspection record.' });
+    if (err) {
+      console.error('DB INSERT ERROR:', err.message);
+      return res.status(500).json({ error: 'Failed to save inspection record.', details: err.message });
+    }
     res.status(201).json({
       message: 'Inspection uploaded successfully.',
       id: this.lastID,
