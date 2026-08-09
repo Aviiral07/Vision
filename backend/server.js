@@ -5,7 +5,7 @@ const cors = require('cors');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
-
+const bcrypt = require('bcrypt');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -23,11 +23,17 @@ const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOAD_DIR),
   filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
 });
-const upload = multer({ 
-  storage, 
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max limit
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) cb(null, true);
-    else cb(new Error('Only image files are allowed'), false);
+    if (file.mimetype && file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      const err = new Error('Only image files are allowed');
+      err.status = 400;
+      cb(err, false);
+    }
   }
 });
 
@@ -72,28 +78,37 @@ db.serialize(() => {
 // Health Check
 app.get('/', (req, res) => res.send('Inspection backend is running.'));
 
-// User Registration
-app.post('/api/register', (req, res) => {
+// User Registration (Hashed Password)
+app.post('/api/register', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required.' });
 
-  const sql = `INSERT INTO Users (username, password) VALUES (?, ?)`;
-  db.run(sql, [username, password], function (err) {
-    if (err) return res.status(400).json({ error: 'Username already exists or invalid data.' });
-    res.status(201).json({ message: 'User registered successfully.', userId: this.lastID });
-  });
+  try {
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const sql = `INSERT INTO Users (username, password) VALUES (?, ?)`;
+    db.run(sql, [username, hashedPassword], function (err) {
+      if (err) return res.status(400).json({ error: 'Username already exists or invalid data.' });
+      res.status(201).json({ message: 'User registered successfully.', userId: this.lastID });
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to hash password.' });
+  }
 });
 
-// User Login
+// User Login (Bcrypt Compare)
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required.' });
 
-  const sql = `SELECT id, username FROM Users WHERE username = ? AND password = ?`;
-  db.get(sql, [username, password], (err, row) => {
+  const sql = `SELECT id, username, password FROM Users WHERE username = ?`;
+  db.get(sql, [username], async (err, row) => {
     if (err) return res.status(500).json({ error: 'Database error.' });
     if (!row) return res.status(401).json({ error: 'Invalid username or password.' });
-    res.json({ message: 'Login successful.', user: row });
+
+    const match = await bcrypt.compare(password, row.password);
+    if (!match) return res.status(401).json({ error: 'Invalid username or password.' });
+
+    res.json({ message: 'Login successful.', user: { id: row.id, username: row.username } });
   });
 });
 
