@@ -1,4 +1,5 @@
-const API_URL = "http://localhost:5000"
+// empty string = same origin as the page (works both locally via Vite proxy and after deploy)
+export const API_URL = import.meta.env.VITE_API_URL || ""
 
 export async function checkServerHealth() {
   try {

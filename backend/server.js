@@ -186,7 +186,7 @@ function buildInspectionSummary(crack_data, rust_data) {
 }
 
 // routes
-app.get('/', (req, res) => res.send('Inspection backend is running.'));
+app.get('/api/health', (req, res) => res.send('Inspection backend is running.'));
 
 app.post('/api/register', (req, res) => {
   const { username, password } = req.body;
@@ -290,6 +290,16 @@ app.get('/api/reports', (req, res) => {
     });
   });
 });
+
+// serve the built React app (run `npm run build` in /frontend first)
+const FRONTEND_DIST = path.join(__dirname, '..', 'frontend', 'dist');
+if (fs.existsSync(FRONTEND_DIST)) {
+  app.use(express.static(FRONTEND_DIST));
+  // any route that isn't /api or /uploads falls back to index.html (React handles routing)
+  app.get(/^(?!\/api|\/uploads).*/, (req, res) => {
+    res.sendFile(path.join(FRONTEND_DIST, 'index.html'));
+  });
+}
 
 // global error catch middleware (handles multer pdf rejection gracefully)
 app.use((err, req, res, next) => {
