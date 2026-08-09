@@ -1,6 +1,8 @@
+const API_URL = "http://localhost:5000"
+
 export async function checkServerHealth() {
   try {
-    const res = await fetch("/docs", {
+    const res = await fetch(`${API_URL}/`, {
       method: "GET",
     })
     return { online: res.ok || res.status === 200 || res.status === 404 }
@@ -11,9 +13,10 @@ export async function checkServerHealth() {
 
 export async function uploadAndInspect(file) {
   const formData = new FormData()
-  formData.append("file", file)
+  // updated backend uses 'image' instead of 'file' in upload.single('image')
+  formData.append("image", file)
 
-  const res = await fetch("/api/inspect", {
+  const res = await fetch(`${API_URL}/api/upload-inspection`, {
     method: "POST",
     body: formData,
   })
@@ -28,8 +31,8 @@ export async function uploadAndInspect(file) {
 
 export function getFullImageUrl(imagePathOrUrl) {
   if (!imagePathOrUrl) return ""
-  if (imagePathOrUrl.startsWith("http://") || imagePathOrUrl.startsWith("https://")) {
+  if (imagePathOrUrl.startsWith("http://") || imagePathOrUrl.startsWith("https://") || imagePathOrUrl.startsWith("blob:")) {
     return imagePathOrUrl
   }
-  return imagePathOrUrl.startsWith("/") ? imagePathOrUrl : `/${imagePathOrUrl}`
+  return imagePathOrUrl.startsWith("/") ? `${API_URL}${imagePathOrUrl}` : `${API_URL}/${imagePathOrUrl}`
 }

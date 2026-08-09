@@ -68,7 +68,21 @@ export function useInspection() {
   const [kpiStats, setKpiStats] = useState(() => computeStatsFromLogs(historyLogs))
   const [loadingStats, setLoadingStats] = useState(false)
 
-  // 1. Health check periodic ping
+  const fetchHistory = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/history`, { cache: 'no-store' })
+      if (res.ok) {
+        const data = await res.json()
+        setHistoryLogs(data)
+        try {
+          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data))
+        } catch {}
+      }
+    } catch (err) {
+      console.error("Failed to fetch history", err)
+    }
+  }, [])
+
   const pingServer = useCallback(async () => {
     const res = await checkServerHealth()
     setServerOnline(res.online)
@@ -76,9 +90,10 @@ export function useInspection() {
 
   useEffect(() => {
     pingServer()
+    fetchHistory()
     const interval = setInterval(pingServer, 10000)
     return () => clearInterval(interval)
-  }, [pingServer])
+  }, [pingServer, fetchHistory])
 
   // 2. Select file handler
   const handleSelectFile = (file) => {
@@ -122,8 +137,8 @@ export function useInspection() {
           s.step === 1
             ? { ...s, status: "completed" }
             : s.step === 2
-            ? { ...s, status: "processing", time: new Date().toLocaleTimeString() }
-            : s
+              ? { ...s, status: "processing", time: new Date().toLocaleTimeString() }
+              : s
         )
       )
 
@@ -135,8 +150,8 @@ export function useInspection() {
           s.step === 2
             ? { ...s, status: "completed" }
             : s.step === 3
-            ? { ...s, status: "processing", time: new Date().toLocaleTimeString() }
-            : s
+              ? { ...s, status: "processing", time: new Date().toLocaleTimeString() }
+              : s
         )
       )
 
@@ -150,8 +165,8 @@ export function useInspection() {
           s.step === 3
             ? { ...s, status: "completed" }
             : s.step === 4
-            ? { ...s, status: "processing", time: new Date().toLocaleTimeString() }
-            : s
+              ? { ...s, status: "processing", time: new Date().toLocaleTimeString() }
+              : s
         )
       )
 
@@ -164,15 +179,15 @@ export function useInspection() {
           s.step === 4
             ? { ...s, status: "completed" }
             : s.step === 5
-            ? { ...s, status: "completed", time: new Date().toLocaleTimeString() }
-            : s
+              ? { ...s, status: "completed", time: new Date().toLocaleTimeString() }
+              : s
         )
       )
 
       // Normalize data directly from backend payload
       const damageType = backendResponse.damage_type || "Corrosion"
-      const confidence = backendResponse.confidence || 0.85
-      const riskScore = backendResponse.risk_score || Math.round(confidence * 100)
+      const confidence = backendResponse.confidence ?? (damageType === "Healthy" ? 0 : 0.85)
+      const riskScore = backendResponse.risk_score ?? Math.round(confidence * 100)
       const recommendation =
         backendResponse.recommendation ||
         (riskScore > 75 ? "Immediate Repair Required" : riskScore > 40 ? "Schedule Maintenance" : "Monitor Asset")
@@ -206,9 +221,9 @@ export function useInspection() {
 
       // Append to audit trail
       const newLog = {
-        id: backendResponse.inspection_id || Date.now(),
-        image_path: backendResponse.image_url || previewSrc,
-        image_url: backendResponse.image_url || previewSrc,
+        id: backendResponse.id || backendResponse.inspection_id || Date.now(),
+        image_path: backendResponse.image_path || backendResponse.image_url || previewSrc,
+        image_url: backendResponse.image_path || backendResponse.image_url || previewSrc,
         damage_type: damageType,
         confidence,
         risk_score: riskScore,
@@ -244,8 +259,8 @@ export function useInspection() {
     setSelectedFile(null)
 
     const damageType = log.damage_type || "Corrosion"
-    const confidence = log.confidence || 0.85
-    const riskScore = log.risk_score || 85.0
+    const confidence = log.confidence ?? (damageType === "Healthy" ? 0 : 0.85)
+    const riskScore = log.risk_score ?? (damageType === "Healthy" ? 0 : 85.0)
 
     setCurrentResult({
       status: "success",

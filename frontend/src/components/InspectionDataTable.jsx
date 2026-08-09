@@ -1,4 +1,4 @@
-import React from "react"
+import React, { useState } from "react"
 import {
   Table,
   TableHeader,
@@ -12,15 +12,33 @@ import { getFullImageUrl } from "@/lib/api"
 import { formatDateTime } from "@/lib/utils"
 
 export function InspectionDataTable({ logs = [], onLoadLog }) {
+  const [isOpen, setIsOpen] = useState(true)
+
   if (logs.length === 0) return null
 
   return (
     <div className="rounded-xl bg-zinc-900/50 border border-zinc-800 p-4">
-      <h3 className="text-sm font-semibold text-zinc-100 mb-3">
-        Recent Inspections
-      </h3>
+      <div 
+        className="flex items-center justify-between cursor-pointer group select-none"
+        onClick={() => setIsOpen(!isOpen)}
+      >
+        <h3 className="text-sm font-semibold text-zinc-100 group-hover:text-white transition-colors mb-0">
+          Recent Inspections
+        </h3>
+        <button 
+          className="p-1 rounded-md hover:bg-zinc-800 text-zinc-400 group-hover:text-zinc-200 transition-colors"
+          aria-label="Toggle history"
+        >
+          {isOpen ? (
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          )}
+        </button>
+      </div>
 
-      <div className="overflow-x-auto">
+      {isOpen && (
+        <div className="overflow-x-auto mt-4">
         <Table>
           <TableHeader>
             <TableRow className="border-b border-zinc-800 text-zinc-400 text-xs">
@@ -79,6 +97,7 @@ export function InspectionDataTable({ logs = [], onLoadLog }) {
           </TableBody>
         </Table>
       </div>
+      )}
     </div>
   )
 }
