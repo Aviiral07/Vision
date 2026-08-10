@@ -38,3 +38,9 @@ ENV/
 .idea/
 .DS_Store
 Thumbs.db
+# Uploaded images aur local database files ko ignore karne ke liye
+backend/uploads/*
+!backend/uploads/.gitkeep
+backend/static/uploads/*
+!backend/static/uploads/.gitkeep
+*.db

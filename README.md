@@ -1,21 +1,50 @@
-# Project Repository
+# Vision — Infrastructure Inspection App
 
-Repository structured for modular development across Frontend, Backend, and AI Engine.
+A full-stack app that uses AI (Roboflow) to detect cracks and corrosion/rust in
+uploaded infrastructure images, calculates a severity score, and logs results.
 
 ## Project Structure
 
 ```
 ├── .github/
-│   └── CODEOWNERS          # Code ownership configurations
-├── frontend/               # React UI & frontend components
-├── backend/                # Python / C APIs & server logic
-├── ai_engine/              # YOLO models & detection scripts
+│   └── CODEOWNERS      # Code ownership configuration
+├── frontend/            # React + Vite UI
+├── backend/              # Node.js + Express API (Roboflow integration, SQLite DB)
 └── README.md
 ```
 
+## Tech Stack
+
+- **Frontend**: React, Vite
+- **Backend**: Node.js, Express, SQLite (via `sqlite3`)
+- **AI Detection**: [Roboflow](https://roboflow.com) hosted inference API
+  (crack + corrosion models called directly over HTTP — no local Python service needed)
+
+## Setup & Run
+
+### 1. Backend
+```bash
+cd backend
+npm install
+node server.js
+```
+Runs on `http://localhost:5000`. Requires a `.env` file (see `backend/.env`) with:
+```
+ROBOFLOW_API_KEY=your_key_here
+PORT=5000
+```
+
+### 2. Frontend
+```bash
+cd frontend
+npm install
+npm run dev
+```
+Runs on `http://localhost:5173` by default.
+
 ## Modules
 
-- **[Frontend](file:///e:/SIH%202026/frontend/README.md)**: React code, components, hooks, and pages.
-- **[Backend](file:///e:/SIH%202026/backend/README.md)**: Python / C API services, REST & WebSocket endpoints, server logic.
-- **[AI Engine](file:///e:/SIH%202026/ai_engine/README.md)**: YOLO weights, computer vision pipelines, detection scripts.
-- **[CODEOWNERS](file:///e:/SIH%202026/.github/CODEOWNERS)**: GitHub code ownership and review rules.
+- **[Frontend](frontend/README.md)**: React code, components, and UI.
+- **[Backend](backend/README.md)**: Express API routes, SQLite schema, Roboflow integration.
+- **[Data Sheet](backend/DATA_SHEET.md)**: Full API + database schema reference.
+- **[CODEOWNERS](.github/CODEOWNERS)**: GitHub code ownership and review rules.
