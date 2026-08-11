@@ -6,6 +6,7 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
 const bcrypt = require('bcrypt');
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -23,6 +24,7 @@ const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOAD_DIR),
   filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
 });
+
 const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max limit
@@ -59,7 +61,7 @@ db.serialize(() => {
     )
   `);
 
-  // Inspection Logs Table
+  // Inspection Logs Table (Includes severity field)
   db.run(`
     CREATE TABLE IF NOT EXISTS InspectionLogs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,6 +69,7 @@ db.serialize(() => {
       damage_type TEXT,
       confidence REAL,
       risk_score REAL,
+      severity TEXT,
       recommendation TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
@@ -116,12 +119,12 @@ app.post('/api/login', (req, res) => {
 app.post('/api/upload-inspection', upload.single('image'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No image file uploaded.' });
 
-  const { damage_type, confidence, risk_score, recommendation } = req.body;
+  const { damage_type, confidence, risk_score, severity, recommendation } = req.body;
   const imagePath = `/uploads/${req.file.filename}`;
 
   const insertSQL = `
-    INSERT INTO InspectionLogs (image_path, damage_type, confidence, risk_score, recommendation)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO InspectionLogs (image_path, damage_type, confidence, risk_score, severity, recommendation)
+    VALUES (?, ?, ?, ?, ?, ?)
   `;
 
   const params = [
@@ -129,6 +132,7 @@ app.post('/api/upload-inspection', upload.single('image'), (req, res) => {
     damage_type || null,
     confidence !== undefined ? parseFloat(confidence) : null,
     risk_score !== undefined ? parseFloat(risk_score) : null,
+    severity || null,
     recommendation || null,
   ];
 
@@ -141,6 +145,7 @@ app.post('/api/upload-inspection', upload.single('image'), (req, res) => {
       damage_type,
       confidence,
       risk_score,
+      severity,
       recommendation,
     });
   });
@@ -171,9 +176,13 @@ app.get('/api/reports', (req, res) => {
   });
 });
 
-// Error Handling Middleware
+// Enhanced Error Handling Middleware (Handles 10MB limit with HTTP 413)
 app.use((err, req, res, next) => {
-  res.status(500).json({ error: err.message || 'Something went wrong.' });
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(413).json({ error: 'File size exceeds 10MB limit.' });
+  }
+  const status = err.status || 500;
+  res.status(status).json({ error: err.message || 'Something went wrong.' });
 });
 
 app.listen(PORT, () => console.log(`Server running at http://localhost:${PORT}`));
