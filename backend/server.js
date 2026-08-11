@@ -76,6 +76,121 @@ db.serialize(() => {
   `);
 });
 
+// ---------------------------------------------------------------------------
+// AI Inference (Roboflow) — runs entirely in Node.js, no Python needed
+// ---------------------------------------------------------------------------
+
+const ROBOFLOW_API_KEY = process.env.ROBOFLOW_API_KEY;
+const CRACK_MODEL_ID = 'crack-and-crack/2';
+const CORROSION_MODEL_ID = 'corrosion-yolov8/4';
+
+async function queryRoboflow(imageAbsPath, modelId, timeoutMs = 15000) {
+  if (!ROBOFLOW_API_KEY) {
+    console.error('ROBOFLOW_API_KEY not set — add it to backend/.env');
+    return { predictions: [] };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const encodedImage = fs.readFileSync(imageAbsPath).toString('base64');
+    const url = `https://serverless.roboflow.com/${modelId}?api_key=${ROBOFLOW_API_KEY}`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: encodedImage,
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '');
+      console.error(`Roboflow error ${response.status} for model ${modelId}: ${errText}`);
+      return { predictions: [] };
+    }
+
+    return await response.json();
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      console.error(`Roboflow request to ${modelId} timed out after ${timeoutMs}ms`);
+    } else {
+      console.error(`Error querying Roboflow model ${modelId}:`, err.message);
+    }
+    return { predictions: [] };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function round2(n) {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+// Runs both models and turns raw Roboflow predictions into a single
+// damage_type / confidence / risk_score / severity / recommendation result.
+async function runInspectionPipeline(imageAbsPath) {
+  const [crackRes, corrosionRes] = await Promise.all([
+    queryRoboflow(imageAbsPath, CRACK_MODEL_ID),
+    queryRoboflow(imageAbsPath, CORROSION_MODEL_ID),
+  ]);
+
+  const crackPreds = (crackRes.predictions || []).map((p) => ({
+    class: 'crack',
+    confidence: round2(p.confidence),
+    x: p.x, y: p.y, width: p.width, height: p.height,
+  }));
+  const rustPreds = (corrosionRes.predictions || []).map((p) => ({
+    class: 'rust',
+    confidence: round2(p.confidence),
+    x: p.x, y: p.y, width: p.width, height: p.height,
+  }));
+
+  const hasCrack = crackPreds.length > 0;
+  const hasRust = rustPreds.length > 0;
+
+  let damage_type;
+  if (hasCrack && hasRust) damage_type = 'Crack + Corrosion';
+  else if (hasCrack) damage_type = 'Crack';
+  else if (hasRust) damage_type = 'Corrosion';
+  else damage_type = 'Healthy';
+
+  const allPreds = [...crackPreds, ...rustPreds];
+  const confidence = allPreds.length
+    ? round2(Math.max(...allPreds.map((p) => p.confidence)))
+    : 0;
+
+  // Base risk on the strongest detection, with a small bump per extra
+  // detection (more damage spots = higher risk), capped at 100.
+  const risk_score = allPreds.length
+    ? Math.min(100, Math.round(confidence * 100 + (allPreds.length - 1) * 5))
+    : 0;
+
+  let severity, recommendation;
+  if (risk_score > 75) {
+    severity = 'Critical';
+    recommendation = 'Immediate Repair Required';
+  } else if (risk_score > 40) {
+    severity = 'Maintenance Needed';
+    recommendation = 'Schedule Maintenance';
+  } else {
+    severity = 'Healthy';
+    recommendation = 'Monitor Asset';
+  }
+
+  return {
+    damage_type,
+    confidence,
+    risk_score,
+    severity,
+    recommendation,
+    detections: {
+      cracks: { predictions: crackPreds },
+      rust: { predictions: rustPreds },
+    },
+  };
+}
+
 // Routes
 
 // Health Check
@@ -115,40 +230,42 @@ app.post('/api/login', (req, res) => {
   });
 });
 
-// Upload Inspection
-app.post('/api/upload-inspection', upload.single('image'), (req, res) => {
+// Upload Inspection — runs the real AI models, never trusts client-supplied results
+app.post('/api/upload-inspection', upload.single('image'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No image file uploaded.' });
 
-  const { damage_type, confidence, risk_score, severity, recommendation } = req.body;
   const imagePath = `/uploads/${req.file.filename}`;
+  const imageAbsPath = path.join(UPLOAD_DIR, req.file.filename);
 
-  const insertSQL = `
-    INSERT INTO InspectionLogs (image_path, damage_type, confidence, risk_score, severity, recommendation)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `;
+  try {
+    const result = await runInspectionPipeline(imageAbsPath);
 
-  const params = [
-    imagePath,
-    damage_type || null,
-    confidence !== undefined ? parseFloat(confidence) : null,
-    risk_score !== undefined ? parseFloat(risk_score) : null,
-    severity || null,
-    recommendation || null,
-  ];
+    const insertSQL = `
+      INSERT INTO InspectionLogs (image_path, damage_type, confidence, risk_score, severity, recommendation)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `;
+    const params = [
+      imagePath,
+      result.damage_type,
+      result.confidence,
+      result.risk_score,
+      result.severity,
+      result.recommendation,
+    ];
 
-  db.run(insertSQL, params, function (err) {
-    if (err) return res.status(500).json({ error: 'Failed to save inspection record.' });
-    res.status(201).json({
-      message: 'Inspection uploaded successfully.',
-      id: this.lastID,
-      image_path: imagePath,
-      damage_type,
-      confidence,
-      risk_score,
-      severity,
-      recommendation,
+    db.run(insertSQL, params, function (err) {
+      if (err) return res.status(500).json({ error: 'Failed to save inspection record.' });
+      res.status(201).json({
+        message: 'Inspection uploaded successfully.',
+        id: this.lastID,
+        image_path: imagePath,
+        ...result,
+      });
     });
-  });
+  } catch (err) {
+    console.error('Inspection pipeline failed:', err);
+    res.status(500).json({ error: 'AI inference failed: ' + err.message });
+  }
 });
 
 // Inspection History

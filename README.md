@@ -18,7 +18,8 @@ uploaded infrastructure images, calculates a severity score, and logs results.
 - **Frontend**: React, Vite
 - **Backend**: Node.js, Express, SQLite (via `sqlite3`)
 - **AI Detection**: [Roboflow](https://roboflow.com) hosted inference API
-  (crack + corrosion models called directly over HTTP — no local Python service needed)
+  (crack + corrosion models called directly over HTTP from `server.js` — pure
+  Node.js, no Python service involved)
 
 ## Setup & Run
 

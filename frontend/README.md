@@ -1,11 +1,11 @@
 # Frontend - AI Damage Inspector
 
-Clean, simple React + Vite interface to test the FastAPI AI damage detection server (`backend/main.py`).
+Clean, simple React + Vite interface for the Node.js/Express AI damage detection server (`backend/server.js`).
 
 ## Features
 - Server health status indicator.
 - Upload infrastructure images (JPG, PNG, WEBP).
-- Send image to `/analyze-infrastructure` endpoint.
+- Send image to `/api/upload-inspection` endpoint.
 - Canvas detection visualizer for Cracks & Corrosion/Rust bounding boxes.
 - Summary counts & raw JSON output.
 
