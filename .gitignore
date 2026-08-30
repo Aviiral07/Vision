@@ -2,6 +2,8 @@
 .env
 .env.local
 *.env
+backend/.env
+restored_app.json
 
 # Node / React (Frontend)
 node_modules/

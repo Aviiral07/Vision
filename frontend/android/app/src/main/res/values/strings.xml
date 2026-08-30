@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">InfraMind AI</string>
+    <string name="title_activity_main">InfraMind AI</string>
+    <string name="package_name">com.inframind.inspection</string>
+    <string name="custom_url_scheme">com.inframind.inspection</string>
+</resources>

@@ -1,0 +1,13 @@
+{
+  "appId": "com.inframind.inspection",
+  "appName": "InfraMind AI",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true
+  }
+}
