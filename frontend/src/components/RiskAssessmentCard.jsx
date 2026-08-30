@@ -29,6 +29,10 @@ export function RiskAssessmentCard({ result }) {
   } = result
 
   const isQueuedOffline = status === "queued_offline" || severity === "SAVED OFFLINE"
+  const isFailed = 
+    status === "failed" || 
+    hygiene_status === "Error" || 
+    (recommendation && recommendation.toLowerCase().includes("failed"))
 
   if (isQueuedOffline) {
     return (
