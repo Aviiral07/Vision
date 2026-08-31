@@ -2,10 +2,12 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import basicSsl from '@vitejs/plugin-basic-ssl'
 import { fileURLToPath, URL } from 'node:url'
 
 export default defineConfig({
   plugins: [
+    basicSsl(),
     react(),
     tailwindcss(),
     VitePWA({
@@ -84,6 +86,11 @@ export default defineConfig({
     host: true,
     port: 5173,
     proxy: {
+      '/api/health': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/health/, ''),
+      },
       '/api': {
         target: 'http://localhost:5000',
         changeOrigin: true,

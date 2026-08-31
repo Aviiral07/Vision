@@ -40,6 +40,29 @@ export function useInspection() {
     }
   }, [])
 
+  // Request location immediately on component mount
+  useEffect(() => {
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setLocation({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          })
+        },
+        (error) => {
+          console.warn("Could not fetch location automatically:", error)
+          if (error.code === 1) { // PERMISSION_DENIED
+            // Don't alert aggressively, just silently fall back
+          }
+          // Default to New Delhi coordinates if unavailable
+          setLocation({ latitude: 28.6139, longitude: 77.209 })
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      )
+    }
+  }, [])
+
   // Overlay filter toggles
   const [overlays, setOverlays] = useState({
     showCracks: true,
@@ -74,7 +97,7 @@ export function useInspection() {
     }
     const sumRisk = logs.reduce((acc, log) => acc + (Number(log.damage_score ?? log.risk_score) || 0), 0)
     const avgRisk = Math.round((sumRisk / total) * 10) / 10
-    const critical = logs.filter((l) => l.severity === "CRITICAL" || (Number(l.damage_score ?? log.risk_score) || 0) > 75).length
+    const critical = logs.filter((l) => l.severity === "CRITICAL" || (Number(l.damage_score ?? l.risk_score) || 0) > 75).length
     const maintenance = logs.filter((l) => {
       const s = Number(l.damage_score ?? l.risk_score) || 0
       return (l.severity === "MEDIUM" || (s > 40 && s <= 75)) && l.severity !== "CRITICAL"
@@ -122,6 +145,10 @@ export function useInspection() {
   }, [computeStatsFromLogs])
 
   const pingServer = useCallback(async () => {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      setServerOnline(false)
+      return
+    }
     const res = await checkServerHealth()
     setServerOnline(res.online)
   }, [])
@@ -134,6 +161,52 @@ export function useInspection() {
       const syncResult = await syncOfflineQueue(uploadAndInspect)
       await refreshOfflineQueue()
       await fetchHistory()
+      
+      if (syncResult && syncResult.successful > 0) {
+        setCurrentResult(prev => {
+          if (prev && prev.status === "queued_offline") {
+            const synced = syncResult.results.find(r => r.status === "success" && r.item.id === prev.offlineId)
+            if (synced) {
+              const log = synced.res;
+              const damageScore = Number(log.damage_score ?? log.risk_score) || 0
+              const severity = log.severity || log.risk_level || (damageScore > 75 ? "CRITICAL" : damageScore > 40 ? "MEDIUM" : "LOW")
+              const hygieneStatus = log.hygiene_status || "Clean"
+              const brokenAssets = !!log.broken_assets
+              const damageType = log.damage_type || (severity === "CRITICAL" ? "Critical Structural Defect" : "Facility Inspection")
+              return {
+                status: "success",
+                inspection_id: log.id,
+                hostel_id: log.hostel_id,
+                damage_type: damageType,
+                damage_score: damageScore,
+                risk_score: damageScore,
+                hygiene_status: hygieneStatus,
+                broken_assets: brokenAssets,
+                severity,
+                recommendation: log.recommendation || (severity === "CRITICAL" ? "Immediate Repair Required" : "Schedule Maintenance"),
+                image_url: log.image_url,
+                detections: {
+                  cracks: { predictions: damageScore > 60 ? [{ x: 260, y: 190, width: 140, height: 85, confidence: damageScore / 100, class: "Structural Defect" }] : [] },
+                  rust: { predictions: (hygieneStatus === "Garbage Detected" || brokenAssets) ? [{ x: 420, y: 310, width: 180, height: 120, confidence: 0.85, class: "Defect Area" }] : [] },
+                },
+              }
+            }
+          }
+          return prev;
+        });
+
+        setStepTimeline(prev => {
+          if (prev.length > 0 && prev[prev.length - 1].label.includes("Queued Record")) {
+             return [
+               { step: 1, label: "Asset Captured & Encoded Locally", status: "completed" },
+               { step: 2, label: "Offline Mode: Stored to Device IndexedDB", status: "completed" },
+               { step: 3, label: "Synced and Analyzed by InfraMind AI", status: "completed", time: new Date().toLocaleTimeString() },
+             ]
+          }
+          return prev;
+        });
+      }
+
       return syncResult
     } catch (e) {
       console.error("Offline sync error:", e)
@@ -185,24 +258,7 @@ export function useInspection() {
     setErrorMessage("")
     setStepTimeline([])
     setActiveStep(0)
-    setLocation(null)
-
-    if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setLocation({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-          })
-        },
-        (error) => {
-          console.warn("Could not fetch location automatically:", error)
-          // Default to New Delhi coordinates if unavailable
-          setLocation({ latitude: 28.6139, longitude: 77.209 })
-        },
-        { timeout: 5000 }
-      )
-    }
+    // We intentionally do NOT clear the location here so it preserves the pre-fetched GPS coordinates
   }
 
   // Toggle overlay filters
@@ -233,7 +289,6 @@ export function useInspection() {
         await new Promise((r) => setTimeout(r, 250))
         const savedItem = await saveOfflineInspection({
           file: selectedFile,
-          dataUrl: previewSrc,
           hostelId: hostelId || "Hostel-A",
           location: location || { latitude: 28.6139, longitude: 77.209 },
           timestamp: new Date().toISOString(),

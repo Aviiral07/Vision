@@ -1,5 +1,5 @@
 import React, { useState } from "react"
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom"
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom"
 import { Header } from "@/components/Header"
 import { InspectionStudio } from "@/components/InspectionStudio"
 import { RiskAssessmentCard } from "@/components/RiskAssessmentCard"
@@ -18,6 +18,36 @@ function PrivateRoute({ children }) {
 }
 
 function MainLayout() {
+  const navigate = useNavigate();
+  const locationObj = useLocation();
+  const [touchStart, setTouchStart] = useState(null);
+  const [touchEnd, setTouchEnd] = useState(null);
+
+  const minSwipeDistance = 75;
+
+  const onTouchStart = (e) => {
+    setTouchEnd(null);
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+
+  const onTouchMove = (e) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+  };
+
+  const onTouchEnd = () => {
+    if (!touchStart || !touchEnd) return;
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+
+    if (isLeftSwipe && locationObj.pathname === '/') {
+      navigate('/dashboard');
+    }
+    if (isRightSwipe && locationObj.pathname === '/dashboard') {
+      navigate('/');
+    }
+  };
+
   const {
     isOnline,
     serverOnline,
@@ -43,7 +73,12 @@ function MainLayout() {
   const [isOfflineModalOpen, setIsOfflineModalOpen] = useState(false)
 
   return (
-    <div className="min-h-screen bg-zinc-50 text-zinc-900 flex flex-col font-sans">
+    <div 
+      className="min-h-screen bg-zinc-50 text-zinc-900 flex flex-col font-sans"
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+    >
       <Header
         serverOnline={serverOnline}
         offlineQueueCount={offlineQueue.length}

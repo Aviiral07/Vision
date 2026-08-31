@@ -9,27 +9,58 @@ export function Header({ serverOnline, offlineQueueCount = 0, onOpenOfflineQueue
   const { isAuthenticated, currentUser, logout } = useAuth();
   const location = useLocation();
   const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [showInstallPopup, setShowInstallPopup] = useState(false);
+
+  // Helper to detect iOS device
+  const isIos = () => {
+    const userAgent = window.navigator.userAgent.toLowerCase();
+    return /iphone|ipad|ipod/.test(userAgent);
+  };
+
+  // Helper to check if already installed on iOS
+  const isInStandaloneMode = () => ('standalone' in window.navigator) && (window.navigator.standalone);
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (e) => {
       e.preventDefault();
       setDeferredPrompt(e);
+      if (!localStorage.getItem('pwa_install_dismissed')) {
+        setShowInstallPopup(true);
+      }
     };
 
     window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+
+    // iOS fallback prompt since beforeinstallprompt is not supported
+    if (isIos() && !isInStandaloneMode()) {
+      if (!localStorage.getItem('pwa_install_dismissed')) {
+        setShowInstallPopup(true);
+      }
+    }
+
     return () => window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
   }, []);
 
   const handleInstallClick = async () => {
+    if (isIos() && !isInStandaloneMode()) {
+      alert("To install on iOS:\n\n1. Tap the Share button at the bottom of Safari.\n2. Scroll down and tap 'Add to Home Screen'.");
+      return;
+    }
     if (!deferredPrompt) {
-      alert("To install this app on your device:\n\n• On Chrome/Edge: Click the install icon in the address bar.\n• On iOS Safari: Tap Share -> Add to Home Screen.\n• On Android: Tap Menu -> Install App.");
+      alert("To install this app on your device:\n\n• On Chrome/Edge: Click the install icon in the address bar.\n• On Android: Tap Menu -> Install App.");
       return;
     }
     deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
     if (outcome === "accepted") {
       setDeferredPrompt(null);
+      setShowInstallPopup(false);
     }
+  };
+
+  const handleDismissPopup = () => {
+    setShowInstallPopup(false);
+    localStorage.setItem('pwa_install_dismissed', 'true');
   };
 
   return (
@@ -53,18 +84,20 @@ export function Header({ serverOnline, offlineQueueCount = 0, onOpenOfflineQueue
         </Link>
 
         {isAuthenticated && (
-          <nav className="hidden md:flex items-center gap-8">
+          <nav className="flex items-center gap-3 sm:gap-8 ml-2 sm:ml-0 overflow-x-auto no-scrollbar">
             <Link 
               to="/" 
-              className={`text-base font-bold transition-colors ${location.pathname === '/' ? 'text-white border-b-2 border-white pb-1' : 'text-blue-200 hover:text-white'}`}
+              className={`text-[11px] sm:text-base font-bold transition-colors whitespace-nowrap ${location.pathname === '/' ? 'text-white border-b-2 border-white pb-0.5 sm:pb-1' : 'text-blue-200 hover:text-white'}`}
             >
-              Inspection Portal
+              <span className="hidden sm:inline">Inspection Portal</span>
+              <span className="sm:hidden">Inspect</span>
             </Link>
             <Link 
               to="/dashboard" 
-              className={`text-base font-bold transition-colors ${location.pathname === '/dashboard' ? 'text-white border-b-2 border-white pb-1' : 'text-blue-200 hover:text-white'}`}
+              className={`text-[11px] sm:text-base font-bold transition-colors whitespace-nowrap ${location.pathname === '/dashboard' ? 'text-white border-b-2 border-white pb-0.5 sm:pb-1' : 'text-blue-200 hover:text-white'}`}
             >
-              Analytics Dashboard
+              <span className="hidden sm:inline">Analytics Dashboard</span>
+              <span className="sm:hidden">Analytics</span>
             </Link>
           </nav>
         )}
@@ -87,10 +120,10 @@ export function Header({ serverOnline, offlineQueueCount = 0, onOpenOfflineQueue
             variant="outline"
             size="sm"
             onClick={handleInstallClick}
-            className="hidden sm:inline-flex items-center gap-1.5 text-xs font-bold bg-blue-950/70 border-blue-700 text-blue-100 hover:bg-blue-800 hover:text-white h-8 px-2.5"
+            className="inline-flex items-center gap-1.5 text-xs font-bold bg-blue-950/70 border-blue-700 text-blue-100 hover:bg-blue-800 hover:text-white h-8 px-2 sm:px-2.5"
           >
             <Download className="w-3.5 h-3.5 text-blue-300" />
-            Install App
+            <span className="hidden sm:inline">Install App</span>
           </Button>
 
           {/* Connection Status */}
@@ -127,6 +160,27 @@ export function Header({ serverOnline, offlineQueueCount = 0, onOpenOfflineQueue
           )}
         </div>
       </div>
+      
+      {/* Universal PWA Install Popup */}
+      {showInstallPopup && (
+        <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-4 sm:w-80 bg-white p-4 rounded-xl shadow-2xl border border-zinc-200 z-[100] flex flex-col gap-3 animate-in slide-in-from-bottom-5 fade-in duration-300">
+          <div className="flex items-start gap-3">
+            <img src={logoImg} alt="Logo" className="w-10 h-10 rounded-lg bg-blue-50 p-1 shadow-sm border border-blue-100" />
+            <div className="flex-1">
+              <h4 className="text-sm font-black text-blue-950">Install InfraMind AI</h4>
+              <p className="text-xs text-zinc-500 mt-1 leading-snug font-medium">Install our app for true offline inspections and faster loading directly from your home screen.</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 mt-1">
+            <Button onClick={handleInstallClick} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold h-9 text-xs">
+              Install Now
+            </Button>
+            <Button onClick={handleDismissPopup} variant="outline" className="flex-1 text-zinc-600 font-bold h-9 text-xs border-zinc-300">
+              Maybe Later
+            </Button>
+          </div>
+        </div>
+      )}
     </header>
   )
 }
