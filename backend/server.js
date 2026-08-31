@@ -346,6 +346,32 @@ app.post('/api/upload-inspection', verifyToken, upload.single('image'), async (r
   }
 });
 
+
+// 4. HISTORY ROUTE — returns all past inspections, newest first
+app.get('/api/history', verifyToken, (req, res) => {
+  const sql = 'SELECT * FROM InspectionLogs ORDER BY created_at DESC';
+  db.all(sql, [], (err, rows) => {
+    if (err) return res.status(500).json({ error: 'Failed to fetch history.' });
+    res.json(rows);
+  });
+});
+
+
+// 5. REPORTS ROUTE — basic aggregate stats
+app.get('/api/reports', verifyToken, (req, res) => {
+  const sql = `
+    SELECT
+      COUNT(*) as total_inspections,
+      AVG(damage_score) as avg_damage_score,
+      SUM(CASE WHEN risk_level = 'CRITICAL' THEN 1 ELSE 0 END) as critical_count
+    FROM InspectionLogs
+  `;
+  db.get(sql, [], (err, row) => {
+    if (err) return res.status(500).json({ error: 'Failed to fetch reports.' });
+    res.json(row);
+  });
+});
+
 // Enhanced Error Handling Middleware (Handles 10MB limit with HTTP 413)
 app.use((err, req, res, next) => {
   if (err.code === 'LIMIT_FILE_SIZE') {
