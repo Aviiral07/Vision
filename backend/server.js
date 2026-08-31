@@ -10,7 +10,11 @@ const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 
 // JWT Secret Key
-const JWT_SECRET = process.env.JWT_SECRET || 'SIH_MOSJE_SECRET_KEY';
+   const JWT_SECRET = process.env.JWT_SECRET;
+   if (!JWT_SECRET) {
+     console.error('FATAL: JWT_SECRET is not set in .env. Server will not start.');
+     process.exit(1);
+   }
 
 // Email Transporter (For Automated Alerts)
 // NOTE: pull these from .env instead of hardcoding — see backend/.env
@@ -227,7 +231,7 @@ async function runInspectionPipeline(imageAbsPath) {
 // Routes
 
 // Health Check
-app.get('/api/health', (req, res) => res.send('Inspection backend is running.'));
+app.get('/', (req, res) => res.send('Inspection backend is running.'));
 
 // 1. SIGNUP ROUTE — hashes the password before storing it. Without this,
 // users end up inserted with a plain-text password (e.g. via DB Browser),
