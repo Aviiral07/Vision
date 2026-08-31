@@ -101,7 +101,7 @@ export function Header({ serverOnline, offlineQueueCount = 0, onOpenOfflineQueue
               <WifiOff className="w-3.5 h-3.5 text-amber-400" />
             )}
             <span className="text-[11px] sm:text-xs text-blue-100 font-bold tracking-wider">
-              {serverOnline ? "CLOUD AI" : "OFFLINE"}
+              {serverOnline ? "ONLINE" : "OFFLINE"}
             </span>
           </div>
 

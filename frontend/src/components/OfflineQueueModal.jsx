@@ -139,7 +139,7 @@ export function OfflineQueueModal({
               className="bg-blue-900 hover:bg-blue-800 text-white font-bold text-xs shadow-md"
             >
               <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isSyncing ? "animate-spin" : ""}`} />
-              {isSyncing ? "Syncing to Cloud AI..." : "Sync All Now"}
+              {isSyncing ? "Syncing to InfraMind AI..." : "Sync All Now"}
             </Button>
           )}
         </div>

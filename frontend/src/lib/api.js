@@ -56,7 +56,7 @@ export function logout() {
 
 export async function checkServerHealth() {
   try {
-    const res = await fetch(`${API_URL}/`, {
+    const res = await fetch(`${API_URL}/api/health`, {
       method: "GET",
     })
     return { online: res.ok || res.status === 200 }

@@ -105,11 +105,15 @@ export function useInspection() {
       if (res.ok) {
         const data = await res.json()
         if (Array.isArray(data) && data.length > 0) {
-          setHistoryLogs(data)
+          const mappedData = data.map(log => ({
+            ...log,
+            severity: log.risk_level || log.severity
+          }))
+          setHistoryLogs(mappedData)
           try {
-            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data))
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(mappedData))
           } catch {}
-          setKpiStats(computeStatsFromLogs(data))
+          setKpiStats(computeStatsFromLogs(mappedData))
         }
       }
     } catch {
@@ -240,7 +244,7 @@ export function useInspection() {
         setStepTimeline([
           { step: 1, label: "Asset Captured & Encoded Locally", status: "completed", time: new Date().toLocaleTimeString() },
           { step: 2, label: "Offline Mode: Stored to Device IndexedDB", status: "completed" },
-          { step: 3, label: `Queued Record #${savedItem.id} for Cloud AI Sync`, status: "completed" },
+          { step: 3, label: `Queued Record #${savedItem.id} for InfraMind AI Sync`, status: "completed" },
         ])
         setActiveStep(5)
 
