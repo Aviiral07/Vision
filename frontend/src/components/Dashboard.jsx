@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { fetchHistoryLogs } from "@/lib/api";
+import { fetchHistoryLogs, fetchReports } from "@/lib/api";
 import { InspectionDataTable } from "./InspectionDataTable";
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -10,14 +10,19 @@ import { AlertCircle, Trash2, Wrench, Building2, CheckCircle2 } from "lucide-rea
 
 export function Dashboard({ onLoadLog }) {
   const [logs, setLogs] = useState([]);
+  const [reports, setReports] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
     async function loadData() {
       try {
-        const data = await fetchHistoryLogs();
+        const [data, reportData] = await Promise.all([
+          fetchHistoryLogs(),
+          fetchReports()
+        ]);
         setLogs(Array.isArray(data) ? data : []);
+        setReports(reportData);
       } catch (err) {
         console.error("Failed to load history", err);
       } finally {
@@ -34,9 +39,9 @@ export function Dashboard({ onLoadLog }) {
     navigate("/");
   };
 
-  // Compute statistics from logs
-  const totalInspections = logs.length;
-  const criticalRiskCount = logs.filter(l => l.severity === "CRITICAL" || (Number(l.damage_score ?? l.risk_score) || 0) > 75).length;
+  // Compute statistics from logs and reports
+  const totalInspections = reports?.total_inspections ?? logs.length;
+  const criticalRiskCount = reports?.critical_count ?? logs.filter(l => l.severity === "CRITICAL" || (Number(l.damage_score ?? l.risk_score) || 0) > 75).length;
   const garbageCount = logs.filter(l => (l.hygiene_status || "").toLowerCase().includes("garbage") || (l.damage_type || "").toLowerCase().includes("garbage")).length;
   const brokenAssetsCount = logs.filter(l => l.broken_assets).length;
   const moderateRiskCount = logs.filter(l => {
@@ -84,7 +89,11 @@ export function Dashboard({ onLoadLog }) {
             <Building2 className="w-4 h-4 text-blue-900" />
           </div>
           <p className="text-3xl font-black text-blue-900 mt-2">{totalInspections}</p>
-          <span className="text-xs text-zinc-500 mt-1 block">Government Hostels & Facilities</span>
+          <span className="text-xs text-zinc-500 mt-1 block">
+            {reports?.avg_damage_score !== undefined 
+              ? `Avg Damage Score: ${Math.round(reports.avg_damage_score)}%`
+              : 'Government Hostels & Facilities'}
+          </span>
         </div>
         
         {/* Critical Risks */}

@@ -56,8 +56,9 @@ export function logout() {
 
 export async function checkServerHealth() {
   try {
-    const res = await fetch(`${API_URL}/`, {
+    const res = await fetch(`${API_URL}/api/health`, {
       method: "GET",
+      cache: "no-store",
     })
     return { online: res.ok || res.status === 200 }
   } catch (err) {
@@ -126,6 +127,24 @@ export async function fetchHistoryLogs() {
     // If backend does not implement /api/history endpoint, fallback to localStorage
     const saved = localStorage.getItem("inframind_inspection_logs")
     return saved ? JSON.parse(saved) : []
+  }
+}
+
+export async function fetchReports() {
+  const token = getToken()
+  const headers = {}
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`
+  }
+  try {
+    const res = await fetch(`${API_URL}/api/reports`, { 
+      cache: 'no-store',
+      headers
+    })
+    if (!res.ok) throw new Error("Failed to fetch reports")
+    return await res.json()
+  } catch {
+    return null
   }
 }
 

@@ -64,7 +64,7 @@ export function RiskAssessmentCard({ result }) {
               Field Storage Protocol
             </span>
             <p className="text-xs font-semibold text-zinc-800 leading-snug">
-              {recommendation || "High-resolution photo and GPS coordinates are preserved locally. Cloud AI will analyze upon reconnection."}
+              {recommendation || "High-resolution photo and GPS coordinates are preserved locally. InfraMind AI will analyze upon reconnection."}
             </p>
           </div>
         </div>

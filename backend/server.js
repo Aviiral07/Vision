@@ -10,7 +10,11 @@ const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 
 // JWT Secret Key
-const JWT_SECRET = process.env.JWT_SECRET || 'SIH_MOSJE_SECRET_KEY';
+   const JWT_SECRET = process.env.JWT_SECRET;
+   if (!JWT_SECRET) {
+     console.error('FATAL: JWT_SECRET is not set in .env. Server will not start.');
+     process.exit(1);
+   }
 
 // Email Transporter (For Automated Alerts)
 // NOTE: pull these from .env instead of hardcoding — see backend/.env
@@ -344,6 +348,32 @@ app.post('/api/upload-inspection', verifyToken, upload.single('image'), async (r
     console.error('Inspection pipeline failed:', err);
     res.status(500).json({ error: 'AI inference failed: ' + err.message });
   }
+});
+
+
+// 4. HISTORY ROUTE — returns all past inspections, newest first
+app.get('/api/history', verifyToken, (req, res) => {
+  const sql = 'SELECT * FROM InspectionLogs ORDER BY created_at DESC';
+  db.all(sql, [], (err, rows) => {
+    if (err) return res.status(500).json({ error: 'Failed to fetch history.' });
+    res.json(rows);
+  });
+});
+
+
+// 5. REPORTS ROUTE — basic aggregate stats
+app.get('/api/reports', verifyToken, (req, res) => {
+  const sql = `
+    SELECT
+      COUNT(*) as total_inspections,
+      AVG(damage_score) as avg_damage_score,
+      SUM(CASE WHEN risk_level = 'CRITICAL' THEN 1 ELSE 0 END) as critical_count
+    FROM InspectionLogs
+  `;
+  db.get(sql, [], (err, row) => {
+    if (err) return res.status(500).json({ error: 'Failed to fetch reports.' });
+    res.json(row);
+  });
 });
 
 // Enhanced Error Handling Middleware (Handles 10MB limit with HTTP 413)
