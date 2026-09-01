@@ -1,8 +1,9 @@
 // empty string = same origin as the page (works both locally via Vite proxy and after deploy)
 export const API_URL = import.meta.env.VITE_API_URL || ""
+let authToken = null
 
 export function getToken() {
-  return localStorage.getItem("token")
+  return authToken
 }
 
 export function getUser() {
@@ -41,7 +42,7 @@ export async function login(username, password) {
   }
   
   if (data.token) {
-    localStorage.setItem("token", data.token)
+    authToken = data.token
   }
   if (data.user) {
     localStorage.setItem("user", JSON.stringify(data.user))
@@ -50,7 +51,7 @@ export async function login(username, password) {
 }
 
 export function logout() {
-  localStorage.removeItem("token")
+  authToken = null
   localStorage.removeItem("user")
 }
 
@@ -154,4 +155,12 @@ export function getFullImageUrl(imagePathOrUrl) {
     return imagePathOrUrl
   }
   return imagePathOrUrl.startsWith("/") ? `${API_URL}${imagePathOrUrl}` : `${API_URL}/${imagePathOrUrl}`
+}
+
+export async function fetchAuthenticatedImage(imagePathOrUrl) {
+  const token = getToken()
+  const headers = token ? { Authorization: `Bearer ${token}` } : {}
+  const res = await fetch(getFullImageUrl(imagePathOrUrl), { headers })
+  if (!res.ok) throw new Error("Unable to load inspection image")
+  return URL.createObjectURL(await res.blob())
 }

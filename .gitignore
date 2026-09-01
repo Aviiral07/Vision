@@ -1,8 +1,8 @@
 # Environment & Secrets
 .env
-.env.local
+.env.*
+!.env.example
 *.env
-backend/.env
 restored_app.json
 
 # Node / React (Frontend)

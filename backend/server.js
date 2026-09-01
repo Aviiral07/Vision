@@ -5,14 +5,17 @@ const cors = require('cors');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 
 // JWT Secret Key
    const JWT_SECRET = process.env.JWT_SECRET;
-   if (!JWT_SECRET) {
-     console.error('FATAL: JWT_SECRET is not set in .env. Server will not start.');
+   if (!JWT_SECRET || JWT_SECRET.length < 32) {
+     console.error('FATAL: JWT_SECRET is missing or too short. Use at least 32 characters in backend/.env.');
      process.exit(1);
    }
 
@@ -28,10 +31,11 @@ const transporter = nodemailer.createTransport({
 
 // Security Middleware: Protects routes from unauthorized access
 function verifyToken(req, res, next) {
-  const token = req.headers['authorization'];
-  if (!token) return res.status(403).json({ error: 'No token provided. Please login.' });
+  const authorization = req.headers.authorization || '';
+  const match = authorization.match(/^Bearer\s+([^\s]+)$/i);
+  if (!match) return res.status(401).json({ error: 'Authentication required.' });
 
-  jwt.verify(token.split(' ')[1], JWT_SECRET, (err, decoded) => {
+  jwt.verify(match[1], JWT_SECRET, (err, decoded) => {
     if (err) return res.status(401).json({ error: 'Unauthorized token.' });
     req.userId = decoded.id;
     req.username = decoded.username;
@@ -41,27 +45,38 @@ function verifyToken(req, res, next) {
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const frontendOrigin = process.env.FRONTEND_ORIGIN || 'http://localhost:5173';
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'Too many authentication attempts. Please try again later.' },
+});
 
-app.use(cors());
+app.use(helmet());
+app.use(cors({ origin: frontendOrigin }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Folders Setup
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-app.use('/uploads', express.static(UPLOAD_DIR));
 
 // Multer Storage Configuration
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOAD_DIR),
-  filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
+  filename: (req, file, cb) => {
+    const extensions = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif' };
+    cb(null, `${crypto.randomUUID()}${extensions[file.mimetype] || '.img'}`);
+  },
 });
 
 const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max limit
   fileFilter: (req, file, cb) => {
-    if (file.mimetype && file.mimetype.startsWith('image/')) {
+    if (['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.mimetype)) {
       cb(null, true);
     } else {
       const err = new Error('Only image files are allowed');
@@ -69,6 +84,15 @@ const upload = multer({
       cb(err, false);
     }
   },
+});
+
+// Uploaded evidence is private inspection data and requires authentication.
+app.get('/uploads/:filename', verifyToken, (req, res, next) => {
+  const filename = path.basename(req.params.filename);
+  if (filename !== req.params.filename) return res.status(400).json({ error: 'Invalid file name.' });
+  res.sendFile(filename, { root: UPLOAD_DIR }, (err) => {
+    if (err && !res.headersSent) next(err);
+  });
 });
 
 // Database Setup
@@ -122,12 +146,13 @@ db.serialize(() => {
 const Groq = require('groq-sdk');
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const hasUsableGroqKey = GROQ_API_KEY && !/^your_.*_here$/i.test(GROQ_API_KEY);
 // NOTE: llama-3.2-11b-vision-preview is deprecated on Groq. As of Aug 2026 the
 // only vision-capable model on GroqCloud is qwen/qwen3.6-27b. Check
 // https://console.groq.com/docs/vision before changing this.
 const VISION_MODEL_ID = 'qwen/qwen3.6-27b';
 
-const groqClient = GROQ_API_KEY ? new Groq({ apiKey: GROQ_API_KEY }) : null;
+const groqClient = hasUsableGroqKey ? new Groq({ apiKey: GROQ_API_KEY }) : null;
 
 const INSPECTION_SYSTEM_PROMPT = `You are an expert infrastructure inspector for MoSJE. Analyze the provided image of a government hostel/facility. Respond ONLY in strict JSON format with exactly these keys: 'damage_score' (number 0-100), 'hygiene_status' (string: 'Clean', 'Dirty', or 'Garbage Detected'), 'broken_assets' (boolean: true/false), and 'severity' (string: 'LOW', 'MEDIUM', 'CRITICAL'). Do not add any extra text or markdown formatting.`;
 
@@ -138,9 +163,9 @@ function round2(n) {
 // Calls Groq's vision model with the "magic prompt" and returns the parsed
 // { damage_score, hygiene_status, broken_assets, severity } object, or null
 // if the key is missing / the call fails / the model didn't return valid JSON.
-async function queryGroqVision(imageAbsPath, timeoutMs = 20000) {
+async function queryGroqVision(imageAbsPath, timeoutMs = 60000) {
   if (!groqClient) {
-    console.error('GROQ_API_KEY not set — add it to backend/.env');
+    console.error('GROQ_API_KEY is missing or still a placeholder — add an active key to backend/.env');
     return null;
   }
 
@@ -236,10 +261,13 @@ app.get('/', (req, res) => res.send('Inspection backend is running.'));
 // 1. SIGNUP ROUTE — hashes the password before storing it. Without this,
 // users end up inserted with a plain-text password (e.g. via DB Browser),
 // which then always fails bcrypt.compare() in /api/login.
-app.post('/api/signup', async (req, res) => {
+app.post('/api/signup', authLimiter, async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: 'Username and password required.' });
+  }
+  if (typeof username !== 'string' || typeof password !== 'string' || username.length > 100 || password.length < 8 || password.length > 128) {
+    return res.status(400).json({ error: 'Use a username up to 100 characters and a password between 8 and 128 characters.' });
   }
 
   try {
@@ -255,7 +283,7 @@ app.post('/api/signup', async (req, res) => {
 });
 
 // 2. LOGIN ROUTE (Generates JWT)
-app.post('/api/login', (req, res) => {
+app.post('/api/login', authLimiter, (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required.' });
 
@@ -346,7 +374,7 @@ app.post('/api/upload-inspection', verifyToken, upload.single('image'), async (r
     });
   } catch (err) {
     console.error('Inspection pipeline failed:', err);
-    res.status(500).json({ error: 'AI inference failed: ' + err.message });
+    res.status(500).json({ error: 'AI inference failed. Please retry the inspection.' });
   }
 });
 

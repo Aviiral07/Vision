@@ -1,4 +1,4 @@
-import React, { useState } from "react"
+import React, { useEffect, useState } from "react"
 import {
   Table,
   TableHeader,
@@ -8,11 +8,34 @@ import {
   TableCell,
 } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
-import { getFullImageUrl } from "@/lib/api"
+import { fetchAuthenticatedImage } from "@/lib/api"
 import { formatDateTime } from "@/lib/utils"
 
 export function InspectionDataTable({ logs = [], onLoadLog }) {
   const [isOpen, setIsOpen] = useState(true)
+  const [imageUrls, setImageUrls] = useState({})
+
+  useEffect(() => {
+    let active = true
+    const objectUrls = []
+    Promise.all(logs.map(async (log) => {
+      const path = log.image_url || log.image_path
+      if (!path) return null
+      try {
+        const url = await fetchAuthenticatedImage(path)
+        objectUrls.push(url)
+        return [log.id, url]
+      } catch {
+        return null
+      }
+    })).then((entries) => {
+      if (active) setImageUrls(Object.fromEntries(entries.filter(Boolean)))
+    })
+    return () => {
+      active = false
+      objectUrls.forEach((url) => URL.revokeObjectURL(url))
+    }
+  }, [logs])
 
   if (logs.length === 0) return null
 
@@ -60,7 +83,7 @@ export function InspectionDataTable({ logs = [], onLoadLog }) {
           </TableHeader>
           <TableBody>
             {logs.slice(0, 15).map((log) => {
-              const imgUrl = getFullImageUrl(log.image_url || log.image_path)
+              const imgUrl = imageUrls[log.id]
               const score = Number(log.damage_score ?? log.risk_score) || 0
               const severity = log.severity || (score > 75 ? "CRITICAL" : score > 40 ? "MEDIUM" : "LOW")
               const isCritical = severity === "CRITICAL" || score > 75

@@ -3,7 +3,8 @@ import {
   API_URL,
   checkServerHealth,
   uploadAndInspect,
-  getFullImageUrl,
+  fetchAuthenticatedImage,
+  getToken,
 } from "@/lib/api"
 import {
   saveOfflineInspection,
@@ -122,7 +123,7 @@ export function useInspection() {
 
   const fetchHistory = useCallback(async () => {
     try {
-      const token = localStorage.getItem("token")
+      const token = getToken()
       const headers = token ? { Authorization: `Bearer ${token}` } : {}
       const res = await fetch(`${API_URL}/api/history`, { cache: "no-store", headers })
       if (res.ok) {
@@ -471,9 +472,15 @@ export function useInspection() {
   }
 
   // Load historical record into studio
-  const loadHistoricalLog = (log) => {
+  const loadHistoricalLog = async (log) => {
     if (!log) return
-    const fullUrl = getFullImageUrl(log.image_url || log.image_path)
+    let fullUrl = ""
+    try {
+      fullUrl = await fetchAuthenticatedImage(log.image_url || log.image_path)
+    } catch {
+      setErrorMessage("Unable to load the historical inspection image.")
+      return
+    }
     setPreviewSrc(fullUrl)
     setSelectedFile(null)
 
