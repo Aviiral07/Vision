@@ -55,7 +55,7 @@ const authLimiter = rateLimit({
 });
 
 app.use(helmet());
-app.use(cors({ origin: frontendOrigin }));
+app.use(cors({ origin: ['https://vision-ecru-phi.vercel.app', 'http://localhost:5173'] }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
