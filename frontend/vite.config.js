@@ -87,16 +87,16 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api/health': {
-        target: 'http://localhost:5000',
+        target: 'https://vision-xf56.onrender.com',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/health/, ''),
       },
       '/api': {
-        target: 'http://localhost:5000',
+        target: 'https://vision-xf56.onrender.com',
         changeOrigin: true,
       },
       '/uploads': {
-        target: 'http://localhost:5000',
+        target: 'https://vision-xf56.onrender.com',
         changeOrigin: true,
       },
     },
