@@ -339,11 +339,17 @@ export function useInspection() {
       )
 
       // Step 2: Groq Vision Model Execution via Backend
+      const token = getToken() || (typeof localStorage !== "undefined" ? localStorage.getItem("token") : null)
+      if (!token) {
+        throw new Error("Authentication session missing or expired. Please log in again to upload inspections.")
+      }
+
       const backendResponse = await uploadAndInspect(selectedFile, {
         hostel_id: hostelId || "Hostel-A",
         gps_lat: location?.latitude || 28.6139,
         gps_long: location?.longitude || 77.209,
         inspection_time: new Date().toISOString(),
+        token,
       })
 
       // Strictly validate if the backend AI inference succeeded

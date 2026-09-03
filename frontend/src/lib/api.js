@@ -3,7 +3,17 @@ export const API_URL = import.meta.env.VITE_API_URL || ""
 let authToken = null
 
 export function getToken() {
-  return authToken
+  if (authToken) return authToken
+  try {
+    const saved = localStorage.getItem("token")
+    if (saved) {
+      authToken = saved
+      return saved
+    }
+  } catch {
+    // Fallback if localStorage is inaccessible
+  }
+  return null
 }
 
 export function getUser() {
@@ -43,16 +53,28 @@ export async function login(username, password) {
   
   if (data.token) {
     authToken = data.token
+    try {
+      localStorage.setItem("token", data.token)
+    } catch (e) {
+      console.warn("Failed to persist token to localStorage:", e)
+    }
   }
   if (data.user) {
-    localStorage.setItem("user", JSON.stringify(data.user))
+    try {
+      localStorage.setItem("user", JSON.stringify(data.user))
+    } catch (e) {
+      console.warn("Failed to persist user to localStorage:", e)
+    }
   }
   return data
 }
 
 export function logout() {
   authToken = null
-  localStorage.removeItem("user")
+  try {
+    localStorage.removeItem("token")
+    localStorage.removeItem("user")
+  } catch {}
 }
 
 export async function checkServerHealth() {
@@ -90,7 +112,7 @@ export async function uploadAndInspect(file, options = {}) {
     formData.append("gps_long", options.longitude.toString())
   }
 
-  const token = getToken()
+  const token = options.token || getToken() || (typeof localStorage !== "undefined" ? localStorage.getItem("token") : null)
   const headers = {}
   if (token) {
     headers["Authorization"] = `Bearer ${token}`
@@ -104,6 +126,9 @@ export async function uploadAndInspect(file, options = {}) {
 
   if (!res.ok) {
     const errBody = await res.json().catch(async () => ({ error: await res.text().catch(() => "") }))
+    if (res.status === 401) {
+      throw new Error(errBody.error || "Authentication required. Please log in again to upload inspections.")
+    }
     const errorMsg = errBody.error || `Inspection failed (HTTP ${res.status}): ${res.statusText}`
     throw new Error(errorMsg)
   }

@@ -1,6 +1,6 @@
 # Backend
 
-Node.js + Express API server for the Vision inspection app.
+Node.js + Express API server for the InfraMind inspection app.
 
 ## What it does
 - Handles user registration/login

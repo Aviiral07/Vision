@@ -1,4 +1,4 @@
-# Vision — Infrastructure Inspection App
+# InfraMind — Infrastructure Inspection App
 
 A full-stack app that uses AI (Roboflow) to detect cracks and corrosion/rust in
 uploaded infrastructure images, calculates a severity score, and logs results.

@@ -24,7 +24,7 @@ export function PipelineProgress({ timeline = [], isProcessing }) {
           <>
             <Loader2 className="h-4 w-4 animate-spin text-zinc-300 shrink-0" />
             <span>
-              {activeStep ? activeStep.label : "Running computer vision models..."}
+              {activeStep ? activeStep.label : "Running InfraMind AI models..."}
             </span>
           </>
         ) : null}

@@ -12,7 +12,7 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'logo.png', 'robots.txt'],
+      includeAssets: ['favicon.ico', 'logo.png', 'logo.jpeg', 'robots.txt'],
       devOptions: {
         enabled: true,
         type: 'module'

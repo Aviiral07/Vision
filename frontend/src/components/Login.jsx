@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+import logoImg from "@/assets/logo.jpeg";
+import logoTextImg from "@/assets/logo-text.jpg";
 import { useAuth } from "./AuthContext";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -42,11 +44,16 @@ export function Login() {
     <div className="min-h-screen flex items-center justify-center bg-zinc-50 p-4">
       <div className="w-full max-w-md bg-white rounded-xl shadow-lg border border-zinc-200 p-8">
         <div className="text-center mb-6">
-          <div className="inline-block p-3 rounded-full bg-blue-50 text-blue-900 mb-3 font-black text-xl">
-            🏛️ MoSJE
+          <div className="flex items-center justify-center mb-3">
+            <img src={logoImg} alt="InfraMind Icon" className="h-16 w-16 rounded-2xl bg-white p-1.5 shadow-md border border-blue-100 object-contain" />
           </div>
-          <h1 className="text-2xl font-bold text-blue-900 mb-1">InfraMind Portal</h1>
-          <p className="text-sm text-zinc-500">
+          <div className="flex items-center justify-center mb-2">
+            <img src={logoTextImg} alt="InfraMind AI" className="h-8 sm:h-9 w-auto object-contain" />
+          </div>
+          <div className="inline-block px-3 py-1 rounded-full bg-blue-50 text-blue-900 font-bold text-xs mb-1 border border-blue-200">
+            🏛️ MoSJE Infrastructure Audit Portal
+          </div>
+          <p className="text-xs text-zinc-500 mt-1">
             {isRegisterMode ? "Register new inspector credentials" : "Sign in to access AI inspection & monitoring"}
           </p>
         </div>
