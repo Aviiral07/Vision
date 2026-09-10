@@ -413,4 +413,7 @@ app.use((err, req, res, next) => {
   res.status(status).json({ error: err.message || 'Something went wrong.' });
 });
 
-app.listen(PORT, () => console.log(`Server running at http://localhost:${PORT}`));
+// Start Server with Host Binding for Render/Docker
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server successfully running on port ${PORT}`);
+});
