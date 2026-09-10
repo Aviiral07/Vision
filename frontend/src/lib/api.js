@@ -1,5 +1,5 @@
 // empty string = same origin as the page (works both locally via Vite proxy and after deploy)
-export const API_URL = import.meta.env.VITE_API_URL || ""
+export const API_URL = import.meta.env.VITE_API_URL || "https://vision-backend-m72s.onrender.com"
 let authToken = null
 
 export function getToken() {
