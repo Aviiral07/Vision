@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react"
-import logoImg from "@/assets/logo.jpeg"
-import logoTextImg from "@/assets/logo-text.jpg"
+import logoImg from "@/assets/logo.png"
 import { Link, useLocation } from "react-router-dom"
 import { useAuth } from "./AuthContext"
 import { LogOut, UserCheck, HardDriveDownload, Download, Wifi, WifiOff } from "lucide-react"
@@ -74,14 +73,10 @@ export function Header({ serverOnline, offlineQueueCount = 0, onOpenOfflineQueue
             alt="InfraMind Logo"
             className="h-10 w-10 rounded-xl bg-white p-1 shadow-sm object-contain"
           />
-          <div className="flex flex-col gap-1">
-            <div className="bg-white px-2 py-0.5 rounded shadow-xs flex items-center w-fit">
-              <img
-                src={logoTextImg}
-                alt="InfraMind AI"
-                className="h-5 sm:h-6 w-auto object-contain"
-              />
-            </div>
+          <div className="flex flex-col">
+            <span className="font-bold text-white text-lg tracking-tight leading-tight">
+              InfraMind AI
+            </span>
             <span className="text-[10px] sm:text-[11px] text-blue-200 font-medium tracking-wide">
               MoSJE Inspection Portal (PWA)
             </span>
@@ -170,13 +165,10 @@ export function Header({ serverOnline, offlineQueueCount = 0, onOpenOfflineQueue
       {showInstallPopup && (
         <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-4 sm:w-80 bg-white p-4 rounded-xl shadow-2xl border border-zinc-200 z-[100] flex flex-col gap-3 animate-in slide-in-from-bottom-5 fade-in duration-300">
           <div className="flex items-start gap-3">
-            <img src={logoImg} alt="Logo" className="w-10 h-10 rounded-xl bg-white p-1 shadow-sm border border-blue-100 object-contain" />
+            <img src={logoImg} alt="InfraMind Logo" className="w-10 h-10 rounded-xl bg-white p-1 shadow-sm border border-blue-100 object-contain" />
             <div className="flex-1">
-              <div className="flex items-center gap-1.5 mb-0.5">
-                <span className="text-xs font-bold text-zinc-700">Install</span>
-                <img src={logoTextImg} alt="InfraMind AI" className="h-4 w-auto object-contain" />
-              </div>
-              <p className="text-xs text-zinc-500 leading-snug font-medium">Install our app for true offline inspections and faster loading directly from your home screen.</p>
+              <h4 className="text-sm font-black text-blue-950">Install InfraMind AI</h4>
+              <p className="text-xs text-zinc-500 mt-0.5 leading-snug font-medium">Install our app for true offline inspections and faster loading directly from your home screen.</p>
             </div>
           </div>
           <div className="flex items-center gap-2 mt-1">

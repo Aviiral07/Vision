@@ -1,6 +1,5 @@
 import React, { useState } from "react";
-import logoImg from "@/assets/logo.jpeg";
-import logoTextImg from "@/assets/logo-text.jpg";
+import logoImg from "@/assets/logo.png";
 import { useAuth } from "./AuthContext";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -44,11 +43,9 @@ export function Login() {
     <div className="min-h-screen flex items-center justify-center bg-zinc-50 p-4">
       <div className="w-full max-w-md bg-white rounded-xl shadow-lg border border-zinc-200 p-8">
         <div className="text-center mb-6">
-          <div className="flex items-center justify-center mb-3">
-            <img src={logoImg} alt="InfraMind Icon" className="h-16 w-16 rounded-2xl bg-white p-1.5 shadow-md border border-blue-100 object-contain" />
-          </div>
-          <div className="flex items-center justify-center mb-2">
-            <img src={logoTextImg} alt="InfraMind AI" className="h-8 sm:h-9 w-auto object-contain" />
+          <div className="flex flex-col items-center justify-center gap-2 mb-3">
+            <img src={logoImg} alt="InfraMind Logo" className="h-16 w-16 rounded-2xl bg-white p-1.5 shadow-md border border-blue-100 object-contain" />
+            <h1 className="text-2xl font-black text-zinc-900 tracking-tight">InfraMind AI</h1>
           </div>
           <div className="inline-block px-3 py-1 rounded-full bg-blue-50 text-blue-900 font-bold text-xs mb-1 border border-blue-200">
             🏛️ MoSJE Infrastructure Audit Portal
