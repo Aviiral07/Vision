@@ -79,29 +79,23 @@ export function logout() {
 
 export async function checkServerHealth() {
   try {
-    const res = await fetch(`${API_URL}/api/health`, {
-      method: "GET",
-      cache: "no-store",
-    })
-    if (res.ok || res.status === 200) {
-      return { online: true }
-    }
-    // Fallback check against backend root
-    const rootRes = await fetch(`${API_URL}/`, {
-      method: "GET",
-      cache: "no-store",
-    })
-    return { online: rootRes.ok || rootRes.status === 200 }
-  } catch (err) {
-    try {
-      const rootRes = await fetch(`${API_URL}/`, {
+    const checkEndpoint = async (path) => {
+      const res = await fetch(`${API_URL}${path}`, {
         method: "GET",
         cache: "no-store",
       })
-      return { online: rootRes.ok || rootRes.status === 200 }
-    } catch {
-      return { online: false, error: err.message }
+      if (res.ok || res.status === 200) return true
+      throw new Error(`HTTP ${res.status}`)
     }
+
+    const online = await Promise.any([
+      checkEndpoint("/"),
+      checkEndpoint("/api/health"),
+    ]).catch(() => false)
+
+    return { online: !!online }
+  } catch (err) {
+    return { online: false, error: err.message }
   }
 }
 

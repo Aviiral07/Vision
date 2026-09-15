@@ -257,6 +257,7 @@ async function runInspectionPipeline(imageAbsPath) {
 
 // Health Check
 app.get('/', (req, res) => res.send('Inspection backend is running.'));
+app.get('/api/health', (req, res) => res.status(200).json({ status: 'ok', message: 'Inspection backend is running.' }));
 
 // 1. SIGNUP ROUTE — hashes the password before storing it. Without this,
 // users end up inserted with a plain-text password (e.g. via DB Browser),
