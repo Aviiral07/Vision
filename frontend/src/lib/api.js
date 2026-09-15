@@ -83,9 +83,25 @@ export async function checkServerHealth() {
       method: "GET",
       cache: "no-store",
     })
-    return { online: res.ok || res.status === 200 }
+    if (res.ok || res.status === 200) {
+      return { online: true }
+    }
+    // Fallback check against backend root
+    const rootRes = await fetch(`${API_URL}/`, {
+      method: "GET",
+      cache: "no-store",
+    })
+    return { online: rootRes.ok || rootRes.status === 200 }
   } catch (err) {
-    return { online: false, error: err.message }
+    try {
+      const rootRes = await fetch(`${API_URL}/`, {
+        method: "GET",
+        cache: "no-store",
+      })
+      return { online: rootRes.ok || rootRes.status === 200 }
+    } catch {
+      return { online: false, error: err.message }
+    }
   }
 }
 
