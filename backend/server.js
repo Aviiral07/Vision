@@ -159,7 +159,7 @@ const hasUsableGroqKey = GROQ_API_KEY && !/^your_.*_here$/i.test(GROQ_API_KEY);
 // NOTE: llama-3.2-11b-vision-preview is deprecated on Groq. As of Aug 2026 the
 // only vision-capable model on GroqCloud is qwen/qwen3.6-27b. Check
 // https://console.groq.com/docs/vision before changing this.
-const VISION_MODEL_ID = 'qwen/qwen3.6-27b';
+const VISION_MODEL_ID = 'llama-3.2-11b-vision-preview';
 
 const groqClient = hasUsableGroqKey ? new Groq({ apiKey: GROQ_API_KEY }) : null;
 
@@ -193,8 +193,7 @@ async function queryGroqVision(imageAbsPath, timeoutMs = 60000) {
         // budget on reasoning and return an empty/invalid JSON body. Turn
         // thinking off and hide any reasoning field so we always get a
         // clean final JSON answer. See console.groq.com/docs/reasoning
-        reasoning_effort: 'none',
-        reasoning_format: 'hidden',
+        
         max_completion_tokens: 512,
         messages: [
           { role: 'system', content: INSPECTION_SYSTEM_PROMPT },
