@@ -159,7 +159,7 @@ const hasUsableGroqKey = GROQ_API_KEY && !/^your_.*_here$/i.test(GROQ_API_KEY);
 // NOTE: llama-3.2-11b-vision-preview is deprecated on Groq. As of Aug 2026 the
 // only vision-capable model on GroqCloud is qwen/qwen3.6-27b. Check
 // https://console.groq.com/docs/vision before changing this.
-const VISION_MODEL_ID = 'meta-llama/llama-4-scout-17b-16e-instruct';
+const VISION_MODEL_ID = 'qwen/qwen3.6-27b';
 
 const groqClient = hasUsableGroqKey ? new Groq({ apiKey: GROQ_API_KEY }) : null;
 
