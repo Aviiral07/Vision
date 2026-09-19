@@ -4,12 +4,23 @@ import { getToken, getUser, login as apiLogin, signup as apiSignup, logout as ap
 const AuthContext = createContext();
 
 export function AuthProvider({ children }) {
-  const [isAuthenticated, setIsAuthenticated] = useState(!!getToken());
-  const [currentUser, setCurrentUser] = useState(getUser());
+  const [isAuthenticated, setIsAuthenticated] = useState(() => !!getToken());
+  const [currentUser, setCurrentUser] = useState(() => getUser());
   
   useEffect(() => {
-    setIsAuthenticated(!!getToken());
-    setCurrentUser(getUser());
+    const syncAuth = () => {
+      const token = getToken();
+      setIsAuthenticated(!!token);
+      setCurrentUser(getUser());
+    };
+
+    syncAuth();
+    const interval = setInterval(syncAuth, 10000);
+    window.addEventListener("storage", syncAuth);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("storage", syncAuth);
+    };
   }, []);
 
   const login = async (username, password) => {

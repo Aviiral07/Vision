@@ -68,7 +68,7 @@ export function Header({ serverOnline, offlineQueueCount = 0, onOpenOfflineQueue
     <header className="bg-blue-900 border-b border-blue-950 px-4 sm:px-6 py-3 shadow-md sticky top-0 z-50">
       <div className="max-w-6xl mx-auto flex items-center justify-between">
         {/* Brand Logo & Name */}
-        <Link to="/" className="flex items-center gap-3">
+        <Link to={isAuthenticated ? "/" : "/login"} className="flex items-center gap-3">
           <img
             src={logoImg}
             alt="InfraMind Logo"

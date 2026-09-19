@@ -3,21 +3,52 @@ import { compressImage } from "@/lib/imageUtils"
 export const API_URL = import.meta.env.VITE_API_URL || "https://vision-backend-m72s.onrender.com"
 let authToken = null
 
+export function isTokenValid(token) {
+  if (!token || typeof token !== "string" || token === "undefined" || token === "null" || token.trim() === "") {
+    return false
+  }
+  try {
+    const parts = token.split(".")
+    if (parts.length !== 3) return false
+    const base64Url = parts[1]
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/")
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split("")
+        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+        .join("")
+    )
+    const decoded = JSON.parse(jsonPayload)
+    if (!decoded || !decoded.id) return false
+    if (decoded.exp && Date.now() >= decoded.exp * 1000) {
+      return false
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
 export function getToken() {
-  if (authToken) return authToken
+  if (authToken && isTokenValid(authToken)) return authToken
   try {
     const saved = localStorage.getItem("token")
-    if (saved) {
+    if (saved && isTokenValid(saved)) {
       authToken = saved
       return saved
+    }
+    if (saved) {
+      logout()
     }
   } catch {
     // Fallback if localStorage is inaccessible
   }
+  authToken = null
   return null
 }
 
 export function getUser() {
+  if (!getToken()) return null
   try {
     const saved = localStorage.getItem("user")
     return saved ? JSON.parse(saved) : null
@@ -157,7 +188,8 @@ export async function uploadAndInspect(file, options = {}) {
     }
 
     if (res.status === 401) {
-      throw new Error(errorMessage || "Authentication required. Please log in again to upload inspections.")
+      logout()
+      throw new Error("Your login session has expired or is invalid. Please log in again to upload inspections.")
     }
     if (res.status === 413) {
       throw new Error(errorMessage || "The image file is too large for the server. Please try with a smaller photo.")
