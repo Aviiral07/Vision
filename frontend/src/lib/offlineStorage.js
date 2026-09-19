@@ -1,4 +1,5 @@
 // IndexedDB Storage & Sync Engine for Offline Field Inspections
+import { compressImage } from "@/lib/imageUtils"
 
 const DB_NAME = "InfraMindOfflineDB"
 const DB_VERSION = 1
@@ -50,8 +51,14 @@ export function dataURLtoFile(dataurl, filename = "offline_capture.jpg") {
  */
 export async function saveOfflineInspection({ file, dataUrl, hostelId, location, timestamp }) {
   const db = await openDB()
-  const imageBase64 = dataUrl || (file ? await fileToDataURL(file) : null)
-  const fileName = file ? file.name : `offline_${Date.now()}.jpg`
+  let imageFile = file
+  if (file && !dataUrl) {
+    try {
+      imageFile = await compressImage(file)
+    } catch {}
+  }
+  const imageBase64 = dataUrl || (imageFile ? await fileToDataURL(imageFile) : null)
+  const fileName = imageFile ? imageFile.name : `offline_${Date.now()}.jpg`
 
   const record = {
     fileName,

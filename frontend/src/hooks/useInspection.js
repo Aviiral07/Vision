@@ -277,7 +277,7 @@ export function useInspection() {
 
     const initialTimeline = [
       { step: 1, label: "Asset Image Ingestion & Multimodal Encoding", status: "processing", time: new Date().toLocaleTimeString() },
-      { step: 2, label: "Groq Vision Inference (qwen/qwen3.6-27b)", status: "pending" },
+      { step: 2, label: "Groq Vision Inference (qwen/qwen3.8-27b)", status: "pending" },
       { step: 3, label: "MoSJE Damage & Hygiene Assessment", status: "pending" },
       { step: 4, label: "Threshold Risk & Alert Evaluation", status: "pending" },
       { step: 5, label: "Database Persistence (InspectionLogs)", status: "pending" },

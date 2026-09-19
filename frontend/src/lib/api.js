@@ -140,12 +140,37 @@ export async function uploadAndInspect(file, options = {}) {
   })
 
   if (!res.ok) {
-    const errBody = await res.json().catch(async () => ({ error: await res.text().catch(() => "") }))
-    if (res.status === 401) {
-      throw new Error(errBody.error || "Authentication required. Please log in again to upload inspections.")
+    let errorMessage = ""
+    try {
+      const contentType = res.headers.get("content-type") || ""
+      if (contentType.includes("application/json")) {
+        const errJson = await res.json()
+        errorMessage = errJson.error || errJson.message || ""
+      } else {
+        const text = await res.text()
+        if (text && !text.trim().startsWith("<")) {
+          errorMessage = text.trim()
+        }
+      }
+    } catch {
+      // Ignore parsing errors
     }
-    const errorMsg = errBody.error || `Inspection failed (HTTP ${res.status}): ${res.statusText}`
-    throw new Error(errorMsg)
+
+    if (res.status === 401) {
+      throw new Error(errorMessage || "Authentication required. Please log in again to upload inspections.")
+    }
+    if (res.status === 413) {
+      throw new Error(errorMessage || "The image file is too large for the server. Please try with a smaller photo.")
+    }
+    if (res.status === 502 || res.status === 503 || res.status === 504) {
+      throw new Error(
+        errorMessage ||
+        `AI inference service is temporarily busy or unavailable (HTTP ${res.status}). Please retry in a moment.`
+      )
+    }
+
+    const fallbackStatus = res.statusText ? ` (${res.statusText})` : ""
+    throw new Error(errorMessage || `Inspection failed: HTTP ${res.status}${fallbackStatus}. Please retry.`)
   }
 
   return await res.json()

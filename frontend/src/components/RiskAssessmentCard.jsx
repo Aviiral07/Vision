@@ -147,7 +147,7 @@ export function RiskAssessmentCard({ result }) {
                 <h4 className="text-sm font-bold text-zinc-900">Groq AI Multimodal Summary</h4>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-900 border border-blue-300">
-                    qwen/qwen3.6-27b VLM
+                    qwen/qwen3.8-27b VLM
                   </span>
                 </div>
               </div>

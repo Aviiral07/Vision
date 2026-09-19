@@ -33,7 +33,7 @@ export function AiSummaryCard({ result }) {
             <div className="flex items-center gap-2 flex-wrap">
               <h4 className="text-sm font-bold text-zinc-900">Groq AI Multimodal Summary</h4>
               <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-900 border border-blue-300">
-                qwen/qwen3.6-27b VLM
+                qwen/qwen3.8-27b VLM
               </span>
             </div>
             <p className="text-[11px] text-zinc-600 font-medium">
