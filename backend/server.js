@@ -156,10 +156,12 @@ const Groq = require('groq-sdk');
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const hasUsableGroqKey = GROQ_API_KEY && !/^your_.*_here$/i.test(GROQ_API_KEY);
-// NOTE: llama-3.2-11b-vision-preview is deprecated on Groq. As of Aug 2026 the
-// only vision-capable model on GroqCloud is qwen/qwen3.6-27b. Check
+// NOTE: llama-3.2-11b-vision-preview is deprecated on Groq. As of Sep 2026 the
+// vision-capable model on GroqCloud is qwen/qwen3.8-27b (verified live against
+// a real key with image input; the earlier "qwen3.6-27b" guess returned
+// model_not_found / 404 on every upload). Check
 // https://console.groq.com/docs/vision before changing this.
-const VISION_MODEL_ID = 'qwen/qwen3.6-27b';
+const VISION_MODEL_ID = 'qwen/qwen3.8-27b';
 
 const groqClient = hasUsableGroqKey ? new Groq({ apiKey: GROQ_API_KEY }) : null;
 
@@ -189,11 +191,14 @@ async function queryGroqVision(imageAbsPath, timeoutMs = 60000) {
         model: VISION_MODEL_ID,
         temperature: 0, // strict and deterministic
         response_format: { type: 'json_object' },
-        // qwen3.6-27b defaults to "thinking mode", which can burn its token
-        // budget on reasoning and return an empty/invalid JSON body. Turn
-        // thinking off and hide any reasoning field so we always get a
-        // clean final JSON answer. See console.groq.com/docs/reasoning
-        
+        // qwen3.8-27b defaults to "thinking mode", which burns its token
+        // budget on reasoning and returns an empty/invalid JSON body.
+        // reasoning_effort 'none' = non-thinking mode, reasoning_format
+        // 'hidden' = never return reasoning text, so we always get a clean
+        // final JSON answer. Both params are REQUIRED. See
+        // console.groq.com/docs/reasoning
+        reasoning_effort: 'none',
+        reasoning_format: 'hidden',
         max_completion_tokens: 512,
         messages: [
           { role: 'system', content: INSPECTION_SYSTEM_PROMPT },
@@ -224,17 +229,9 @@ async function queryGroqVision(imageAbsPath, timeoutMs = 60000) {
 }
 
 // Maps the raw VLM output to a flat result object used by the upload route.
+// (A null vlm can never reach here anymore — runInspectionPipeline throws first,
+//  so failed analyses no longer save fake 'Error' records into the database.)
 function mapGroqResultToInspection(vlm) {
-  if (!vlm) {
-    return {
-      damage_score: 0,
-      hygiene_status: 'Error',
-      broken_assets: false,
-      severity: 'LOW',
-      recommendation: 'AI analysis failed — please retry the upload.',
-    };
-  }
-
   const damageScore = Math.max(0, Math.min(100, Number(vlm.damage_score) || 0));
   const hygieneStatus = vlm.hygiene_status || 'Clean';
   const brokenAssets = !!vlm.broken_assets;
@@ -258,6 +255,12 @@ function mapGroqResultToInspection(vlm) {
 
 async function runInspectionPipeline(imageAbsPath) {
   const vlmResult = await queryGroqVision(imageAbsPath);
+  if (!vlmResult) {
+    // queryGroqVision already logged the specific reason to the server console.
+    // Throw so the upload route returns an error and NEVER writes a fake
+    // 'Error' row into InspectionLogs (that used to pollute history/analytics).
+    throw new Error('AI vision analysis did not return a valid result.');
+  }
   return mapGroqResultToInspection(vlmResult);
 }
 
@@ -383,7 +386,11 @@ app.post('/api/upload-inspection', verifyToken, upload.single('image'), async (r
     });
   } catch (err) {
     console.error('Inspection pipeline failed:', err);
-    res.status(500).json({ error: 'AI inference failed. Please retry the inspection.' });
+    // AI failed -> remove the orphan uploaded image; no fake DB row either.
+    // (Earlier a failed analysis still saved a fake 'Error' record into the
+    //  database and returned 201, which polluted the analytics/history.)
+    fs.unlink(imageAbsPath, () => {});
+    res.status(502).json({ error: 'AI inference failed. Please retry the inspection.' });
   }
 });
 
