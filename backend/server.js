@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const multer = require('multer');
 const cors = require('cors');
-const sqlite3 = require('sqlite3').verbose();
+const { Pool } = require('pg');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -13,14 +13,61 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 
 // JWT Secret Key
-   const JWT_SECRET = process.env.JWT_SECRET;
-   if (!JWT_SECRET || JWT_SECRET.length < 32) {
-     console.error('FATAL: JWT_SECRET is missing or too short. Use at least 32 characters in backend/.env.');
-     process.exit(1);
-   }
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET || JWT_SECRET.length < 32) {
+  console.error('FATAL: JWT_SECRET is missing or too short. Use at least 32 characters in backend/.env.');
+  process.exit(1);
+}
+
+// PostgreSQL (Neon) Database Connection
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  }
+});
+
+pool.connect((err, client, release) => {
+  if (err) console.error('Database connection error:', err.stack);
+  else console.log('Successfully connected to Neon PostgreSQL Cloud Database!');
+  if (release) release();
+});
+
+// Database Table Initialization
+const initDb = async () => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS Users (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(100) UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS InspectionLogs (
+        id SERIAL PRIMARY KEY,
+        hostel_id TEXT,
+        inspector_id TEXT,
+        image_url TEXT NOT NULL,
+        gps_lat REAL,
+        gps_long REAL,
+        damage_score REAL,
+        hygiene_status TEXT,
+        risk_level TEXT,
+        inspection_time TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    console.log('Database tables verified/created successfully.');
+  } catch (err) {
+    console.error('Error creating database tables:', err);
+  }
+};
+initDb();
 
 // Email Transporter (For Automated Alerts)
-// NOTE: pull these from .env instead of hardcoding — see backend/.env
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
@@ -45,7 +92,6 @@ function verifyToken(req, res, next) {
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const frontendOrigin = process.env.FRONTEND_ORIGIN || 'http://localhost:5173';
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 20,
@@ -56,13 +102,7 @@ const authLimiter = rateLimit({
 
 app.use(helmet());
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || origin.endsWith('.vercel.app') || origin === 'http://localhost:5173' || origin === 'http://localhost:3000') {
-      callback(null, true);
-    } else {
-      callback(null, true);
-    }
-  },
+  origin: (origin, callback) => callback(null, true),
   credentials: true,
 }));
 app.use(express.json());
@@ -95,7 +135,6 @@ const upload = multer({
   },
 });
 
-// Uploaded evidence is private inspection data and requires authentication.
 app.get('/uploads/:filename', verifyToken, (req, res, next) => {
   const filename = path.basename(req.params.filename);
   if (filename !== req.params.filename) return res.status(400).json({ error: 'Invalid file name.' });
@@ -104,79 +143,17 @@ app.get('/uploads/:filename', verifyToken, (req, res, next) => {
   });
 });
 
-// Database Setup
-const DB_DIR = path.join(__dirname, 'db');
-if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
-const DB_PATH = path.join(DB_DIR, 'inspection.db');
-
-const db = new sqlite3.Database(DB_PATH, (err) => {
-  if (err) console.error('Database connection error:', err.message);
-  else console.log('Connected to SQLite database at', DB_PATH);
-});
-
-// Table Initializations
-db.serialize(() => {
-  // Users Table
-  db.run(`
-    CREATE TABLE IF NOT EXISTS Users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT UNIQUE NOT NULL,
-      password TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  // Inspection Logs Table — FIXED: columns now match what the insert
-  // statement below actually writes (hostel_id, inspector_id, image_url,
-  // gps_lat, gps_long, damage_score, hygiene_status, risk_level,
-  // inspection_time). The old version of this file declared a different
-  // set of columns than it inserted into, which crashes every upload.
-  db.run(`
-    CREATE TABLE IF NOT EXISTS InspectionLogs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      hostel_id TEXT,
-      inspector_id TEXT,
-      image_url TEXT NOT NULL,
-      gps_lat REAL,
-      gps_long REAL,
-      damage_score REAL,
-      hygiene_status TEXT,
-      risk_level TEXT,
-      inspection_time TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-});
-
-// ---------------------------------------------------------------------------
-// AI Inference (Groq VLM) — Sanchi's prompt-based pipeline, no training needed
-// ---------------------------------------------------------------------------
-
+// AI Inference Setup (Groq VLM)
 const Groq = require('groq-sdk');
-
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const hasUsableGroqKey = GROQ_API_KEY && !/^your_.*_here$/i.test(GROQ_API_KEY);
-// NOTE: llama-3.2-11b-vision-preview is deprecated on Groq. As of Sep 2026 the
-// vision-capable model on GroqCloud is qwen/qwen3.8-27b (verified live against
-// a real key with image input; the earlier "qwen3.6-27b" guess returned
-// model_not_found / 404 on every upload). Check
-// https://console.groq.com/docs/vision before changing this.
 const VISION_MODEL_ID = 'qwen/qwen3.8-27b';
-
 const groqClient = hasUsableGroqKey ? new Groq({ apiKey: GROQ_API_KEY }) : null;
-
 const INSPECTION_SYSTEM_PROMPT = `You are an expert infrastructure inspector for MoSJE. Analyze the provided image of a government hostel/facility. Respond ONLY in strict JSON format with exactly these keys: 'damage_score' (number 0-100), 'hygiene_status' (string: 'Clean', 'Dirty', or 'Garbage Detected'), 'broken_assets' (boolean: true/false), and 'severity' (string: 'LOW', 'MEDIUM', 'CRITICAL'). Do not add any extra text or markdown formatting.`;
 
-function round2(n) {
-  return Math.round((Number(n) || 0) * 100) / 100;
-}
-
-// Calls Groq's vision model with the "magic prompt" and returns the parsed
-// { damage_score, hygiene_status, broken_assets, severity } object, or null
-// if the key is missing / the call fails / the model didn't return valid JSON.
 async function queryGroqVision(imageAbsPath, timeoutMs = 60000) {
   if (!groqClient) {
-    console.error('GROQ_API_KEY is missing or still a placeholder — add an active key to backend/.env');
+    console.error('GROQ_API_KEY is missing or invalid in backend/.env');
     return null;
   }
 
@@ -185,18 +162,11 @@ async function queryGroqVision(imageAbsPath, timeoutMs = 60000) {
 
   try {
     const base64Image = fs.readFileSync(imageAbsPath).toString('base64');
-
     const chatCompletion = await groqClient.chat.completions.create(
       {
         model: VISION_MODEL_ID,
-        temperature: 0, // strict and deterministic
+        temperature: 0,
         response_format: { type: 'json_object' },
-        // qwen3.8-27b defaults to "thinking mode", which burns its token
-        // budget on reasoning and returns an empty/invalid JSON body.
-        // reasoning_effort 'none' = non-thinking mode, reasoning_format
-        // 'hidden' = never return reasoning text, so we always get a clean
-        // final JSON answer. Both params are REQUIRED. See
-        // console.groq.com/docs/reasoning
         reasoning_effort: 'none',
         reasoning_format: 'hidden',
         max_completion_tokens: 512,
@@ -217,20 +187,13 @@ async function queryGroqVision(imageAbsPath, timeoutMs = 60000) {
     const raw = chatCompletion.choices[0].message.content;
     return JSON.parse(raw);
   } catch (err) {
-    if (err.name === 'AbortError') {
-      console.error(`Groq vision request timed out after ${timeoutMs}ms`);
-    } else {
-      console.error('Groq vision error:', err.message);
-    }
+    console.error('Groq vision error:', err.message);
     return null;
   } finally {
     clearTimeout(timer);
   }
 }
 
-// Maps the raw VLM output to a flat result object used by the upload route.
-// (A null vlm can never reach here anymore — runInspectionPipeline throws first,
-//  so failed analyses no longer save fake 'Error' records into the database.)
 function mapGroqResultToInspection(vlm) {
   const damageScore = Math.max(0, Math.min(100, Number(vlm.damage_score) || 0));
   const hygieneStatus = vlm.hygiene_status || 'Clean';
@@ -245,7 +208,7 @@ function mapGroqResultToInspection(vlm) {
 
   return {
     damage_score: damageScore,
-    risk_score: damageScore, // kept for any code still reading risk_score
+    risk_score: damageScore,
     hygiene_status: hygieneStatus,
     broken_assets: brokenAssets,
     severity: severityRaw,
@@ -255,78 +218,61 @@ function mapGroqResultToInspection(vlm) {
 
 async function runInspectionPipeline(imageAbsPath) {
   const vlmResult = await queryGroqVision(imageAbsPath);
-  if (!vlmResult) {
-    // queryGroqVision already logged the specific reason to the server console.
-    // Throw so the upload route returns an error and NEVER writes a fake
-    // 'Error' row into InspectionLogs (that used to pollute history/analytics).
-    throw new Error('AI vision analysis did not return a valid result.');
-  }
+  if (!vlmResult) throw new Error('AI vision analysis did not return a valid result.');
   return mapGroqResultToInspection(vlmResult);
 }
 
 // Routes
-
-// Health Check
 app.get('/', (req, res) => res.send('Inspection backend is running.'));
 app.get('/api/health', (req, res) => res.status(200).json({ status: 'ok', message: 'Inspection backend is running.' }));
 
-// 1. SIGNUP ROUTE — hashes the password before storing it. Without this,
-// users end up inserted with a plain-text password (e.g. via DB Browser),
-// which then always fails bcrypt.compare() in /api/login.
+// 1. SIGNUP ROUTE
 app.post('/api/signup', authLimiter, async (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password required.' });
-  }
-  if (typeof username !== 'string' || typeof password !== 'string' || username.length > 100 || password.length < 8 || password.length > 128) {
-    return res.status(400).json({ error: 'Use a username up to 100 characters and a password between 8 and 128 characters.' });
-  }
-
-  try {
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const sql = 'INSERT INTO Users (username, password) VALUES (?, ?)';
-    db.run(sql, [username, hashedPassword], function (err) {
-      if (err) return res.status(500).json({ error: 'Username may already exist.' });
-      res.status(201).json({ message: 'User registered successfully.', id: this.lastID });
-    });
-  } catch (err) {
-    res.status(500).json({ error: 'Registration failed.' });
-  }
-});
-
-// 2. LOGIN ROUTE (Generates JWT)
-app.post('/api/login', authLimiter, (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required.' });
 
-  const sql = 'SELECT id, username, password FROM Users WHERE username = ?';
-  db.get(sql, [username], async (err, row) => {
-    if (err) return res.status(500).json({ error: 'Database error.' });
-    if (!row) return res.status(401).json({ error: 'Invalid username or password.' });
-
-    const match = await bcrypt.compare(password, row.password);
-    if (!match) return res.status(401).json({ error: 'Invalid username or password.' });
-
-    const token = jwt.sign({ id: row.id, username: row.username }, JWT_SECRET, { expiresIn: '1d' });
-    res.json({ message: 'Login successful.', token, user: { id: row.id, username: row.username } });
-  });
+  try {
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const sql = 'INSERT INTO Users (username, password) VALUES ($1, $2) RETURNING id';
+    const result = await pool.query(sql, [username, hashedPassword]);
+    res.status(201).json({ message: 'User registered successfully.', id: result.rows[0].id });
+  } catch (err) {
+    res.status(500).json({ error: 'Username may already exist or DB error.' });
+  }
 });
 
-// 3. UPLOAD ROUTE (Groq AI pipeline + DB insert + email alert on critical)
+// 2. LOGIN ROUTE
+app.post('/api/login', authLimiter, async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) return res.status(400).json({ error: 'Username and password required.' });
+
+  try {
+    const sql = 'SELECT id, username, password FROM Users WHERE username = $1';
+    const result = await pool.query(sql, [username]);
+    
+    if (result.rows.length === 0) return res.status(401).json({ error: 'Invalid username or password.' });
+    const user = result.rows[0];
+
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) return res.status(401).json({ error: 'Invalid username or password.' });
+
+    const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '1d' });
+    res.json({ message: 'Login successful.', token, user: { id: user.id, username: user.username } });
+  } catch (err) {
+    res.status(500).json({ error: 'Database error.' });
+  }
+});
+
+// 3. UPLOAD ROUTE
 app.post('/api/upload-inspection', verifyToken, upload.single('image'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No image file uploaded.' });
 
-  // FIXED: was using single quotes, so `${req.file.filename}` never got
-  // interpolated — every row stored the literal string
-  // "/uploads/${req.file.filename}". Must use backticks.
   const imagePath = `/uploads/${req.file.filename}`;
   const imageAbsPath = path.join(UPLOAD_DIR, req.file.filename);
 
   const hostel_id = req.body.hostel_id || 'UNKNOWN_HOSTEL';
   const inspector_id = req.username || 'UNKNOWN_INSPECTOR';
   const inspection_time = req.body.inspection_time || new Date().toISOString();
-
-  // EXIF GPS Logic (placeholder until real GPS extraction is wired in)
   const gps_lat = req.body.gps_lat || 28.6139;
   const gps_long = req.body.gps_long || 77.209;
 
@@ -335,7 +281,7 @@ app.post('/api/upload-inspection', verifyToken, upload.single('image'), async (r
 
     const insertSQL = `
       INSERT INTO InspectionLogs (hostel_id, inspector_id, image_url, gps_lat, gps_long, damage_score, hygiene_status, risk_level, inspection_time)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id
     `;
 
     const params = [
@@ -350,77 +296,64 @@ app.post('/api/upload-inspection', verifyToken, upload.single('image'), async (r
       inspection_time,
     ];
 
-    db.run(insertSQL, params, async function (err) {
-      if (err) {
-        console.error('DB Insert Error:', err);
-        return res.status(500).json({ error: 'Failed to save inspection record.' });
-      }
+    const dbRes = await pool.query(insertSQL, params);
 
-      // Automated Escalation Alert
-      if (result.severity === 'CRITICAL' || result.hygiene_status === 'Garbage Detected') {
-        if (process.env.ALERT_EMAIL_USER && process.env.ALERT_EMAIL_PASS) {
-          try {
-            await transporter.sendMail({
-              from: process.env.ALERT_EMAIL_USER,
-              to: process.env.ALERT_EMAIL_TO || 'nodalofficer@gov.in',
-              // FIXED: was using single quotes, so hostel_id never got
-              // interpolated into the subject/body. Must use backticks.
-              subject: `🚨 URGENT: Critical Risk at ${hostel_id}`,
-              text: `Critical issue detected!\n\nHostel: ${hostel_id}\nInspector: ${inspector_id}\nRisk Level: ${result.severity}\nHygiene Status: ${result.hygiene_status}\nTime: ${inspection_time}`,
-            });
-            console.log('Alert Email Sent successfully!');
-          } catch (emailErr) {
-            console.error('Email send failed. Check credentials.', emailErr.message);
-          }
-        } else {
-          console.warn('ALERT_EMAIL_USER/ALERT_EMAIL_PASS not set — skipping email alert.');
+    if (result.severity === 'CRITICAL' || result.hygiene_status === 'Garbage Detected') {
+      if (process.env.ALERT_EMAIL_USER && process.env.ALERT_EMAIL_PASS) {
+        try {
+          await transporter.sendMail({
+            from: process.env.ALERT_EMAIL_USER,
+            to: process.env.ALERT_EMAIL_TO || 'nodalofficer@gov.in',
+            subject: `🚨 URGENT: Critical Risk at ${hostel_id}`,
+            text: `Critical issue detected!\n\nHostel: ${hostel_id}\nInspector: ${inspector_id}\nRisk Level: ${result.severity}\nHygiene Status: ${result.hygiene_status}\nTime: ${inspection_time}`,
+          });
+        } catch (emailErr) {
+          console.error('Email send failed:', emailErr.message);
         }
       }
+    }
 
-      res.status(201).json({
-        message: 'Inspection uploaded successfully.',
-        id: this.lastID,
-        image_url: imagePath,
-        ...result,
-      });
+    res.status(201).json({
+      message: 'Inspection uploaded successfully.',
+      id: dbRes.rows[0].id,
+      image_url: imagePath,
+      ...result,
     });
   } catch (err) {
     console.error('Inspection pipeline failed:', err);
-    // AI failed -> remove the orphan uploaded image; no fake DB row either.
-    // (Earlier a failed analysis still saved a fake 'Error' record into the
-    //  database and returned 201, which polluted the analytics/history.)
     fs.unlink(imageAbsPath, () => {});
     res.status(502).json({ error: 'AI inference failed. Please retry the inspection.' });
   }
 });
 
-
-// 4. HISTORY ROUTE — returns all past inspections, newest first
-app.get('/api/history', verifyToken, (req, res) => {
-  const sql = 'SELECT * FROM InspectionLogs ORDER BY created_at DESC';
-  db.all(sql, [], (err, rows) => {
-    if (err) return res.status(500).json({ error: 'Failed to fetch history.' });
-    res.json(rows);
-  });
+// 4. HISTORY ROUTE
+app.get('/api/history', verifyToken, async (req, res) => {
+  try {
+    const sql = 'SELECT * FROM InspectionLogs ORDER BY created_at DESC';
+    const result = await pool.query(sql);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch history.' });
+  }
 });
 
-
-// 5. REPORTS ROUTE — basic aggregate stats
-app.get('/api/reports', verifyToken, (req, res) => {
-  const sql = `
-    SELECT
-      COUNT(*) as total_inspections,
-      AVG(damage_score) as avg_damage_score,
-      SUM(CASE WHEN risk_level = 'CRITICAL' THEN 1 ELSE 0 END) as critical_count
-    FROM InspectionLogs
-  `;
-  db.get(sql, [], (err, row) => {
-    if (err) return res.status(500).json({ error: 'Failed to fetch reports.' });
-    res.json(row);
-  });
+// 5. REPORTS ROUTE
+app.get('/api/reports', verifyToken, async (req, res) => {
+  try {
+    const sql = `
+      SELECT
+        COUNT(*) as total_inspections,
+        AVG(damage_score) as avg_damage_score,
+        SUM(CASE WHEN risk_level = 'CRITICAL' THEN 1 ELSE 0 END) as critical_count
+      FROM InspectionLogs
+    `;
+    const result = await pool.query(sql);
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch reports.' });
+  }
 });
 
-// Enhanced Error Handling Middleware (Handles 10MB limit with HTTP 413)
 app.use((err, req, res, next) => {
   if (err.code === 'LIMIT_FILE_SIZE') {
     return res.status(413).json({ error: 'File size exceeds 10MB limit.' });
@@ -429,7 +362,6 @@ app.use((err, req, res, next) => {
   res.status(status).json({ error: err.message || 'Something went wrong.' });
 });
 
-// Start Server with Host Binding for Render/Docker
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server successfully running on port ${PORT}`);
 });
