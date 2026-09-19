@@ -1,3 +1,4 @@
+import { compressImage } from "@/lib/imageUtils"
 // empty string = same origin as the page (works both locally via Vite proxy and after deploy)
 export const API_URL = import.meta.env.VITE_API_URL || "https://vision-backend-m72s.onrender.com"
 let authToken = null
@@ -102,7 +103,11 @@ export async function checkServerHealth() {
 export async function uploadAndInspect(file, options = {}) {
   const formData = new FormData()
   // backend server.js expects upload.single('image')
-  formData.append("image", file)
+  // Compress large phone photos BEFORE upload: Vercel rejects bodies over
+  // ~4.5MB with an empty 502 before the request reaches the backend, which
+  // surfaced as "Inspection failed (HTTP 502):" with no message in the UI.
+  const imageToSend = await compressImage(file)
+  formData.append("image", imageToSend)
   
   const hostel_id = options.hostel_id || options.hostelId || "HOSTEL-MAIN"
   formData.append("hostel_id", hostel_id)
