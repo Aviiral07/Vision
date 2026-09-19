@@ -292,9 +292,14 @@ export function RiskAssessmentCard({ result }) {
             MoSJE Protocol: <strong className="text-blue-950 font-bold">{recommendation}</strong>
           </span>
         </div>
-        <span className="text-[11px] font-semibold text-blue-800 shrink-0">
-          Tag: {hostel_id}
-        </span>
+        <div className="flex items-center gap-2 text-[11px] font-semibold text-blue-800 shrink-0">
+          <span>Tag: {hostel_id}</span>
+          {result.gps_lat != null && result.gps_long != null && (
+            <span className="flex items-center gap-1 text-emerald-700 font-mono bg-emerald-100/70 px-2 py-0.5 rounded border border-emerald-300">
+              📍 {Number(result.gps_lat).toFixed(4)}, {Number(result.gps_long).toFixed(4)}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   )

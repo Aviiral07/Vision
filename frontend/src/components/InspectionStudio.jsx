@@ -88,10 +88,22 @@ export function InspectionStudio({
     }
   }
 
+  const isViewingReport = Boolean(
+    currentResult && currentResult.status !== "failed" && currentResult.status !== "queued_offline"
+  )
+
+  // If viewing an active or historical audit report, show its recorded GPS coordinates.
+  // Otherwise, show the inspector device's live GPS coordinates for the next capture.
+  const activeLocation = (isViewingReport && currentResult?.gps_lat != null && currentResult?.gps_long != null)
+    ? { latitude: Number(currentResult.gps_lat), longitude: Number(currentResult.gps_long) }
+    : location
+
+  const activeHostelId = isViewingReport ? (currentResult.hostel_id || hostelId) : hostelId
+
   return (
-    <div className="rounded-xl bg-white border border-zinc-200 p-6 flex flex-col shadow-sm space-y-4">
-      {/* Header controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="rounded-xl bg-white border border-zinc-200 p-5 shadow-sm space-y-4">
+      {/* Header & Meta Row */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-zinc-100">
         <div>
           <h2 className="text-lg font-bold text-blue-900">Inspection Studio</h2>
           <p className="text-xs text-zinc-500">Capture or upload facility infrastructure image for AI auditing</p>
@@ -104,18 +116,29 @@ export function InspectionStudio({
             <span className="text-xs font-semibold text-zinc-600">Hostel/Facility:</span>
             <input
               type="text"
-              value={hostelId}
+              value={activeHostelId}
               onChange={(e) => setHostelId && setHostelId(e.target.value)}
               placeholder="e.g. Hostel-A"
-              className="text-xs font-bold text-zinc-900 bg-white border border-zinc-300 rounded px-2 py-0.5 w-28 focus:outline-none focus:ring-1 focus:ring-blue-600"
+              disabled={isViewingReport}
+              className="text-xs font-bold text-zinc-900 bg-white border border-zinc-300 rounded px-2 py-0.5 w-28 focus:outline-none focus:ring-1 focus:ring-blue-600 disabled:bg-zinc-100 disabled:text-zinc-700"
             />
           </div>
 
-          <div className="flex items-center gap-1.5 bg-zinc-50 border border-zinc-200 rounded-lg px-2.5 py-1.5 text-xs">
-            <MapPin className="w-3.5 h-3.5 text-emerald-600" />
-            <span className="text-zinc-600 font-medium">
-              {location 
-                ? `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`
+          <div
+            className={`flex items-center gap-1.5 border rounded-lg px-2.5 py-1.5 text-xs ${
+              isViewingReport
+                ? "bg-emerald-50 border-emerald-300 text-emerald-900"
+                : "bg-zinc-50 border-zinc-200 text-zinc-600"
+            }`}
+            title={isViewingReport ? "Recorded GPS of this audit" : "Live Device GPS"}
+          >
+            <MapPin className={`w-3.5 h-3.5 ${isViewingReport ? "text-emerald-700" : "text-emerald-600"}`} />
+            <span className="text-[10px] uppercase font-bold tracking-wider opacity-75">
+              {isViewingReport ? "Audit GPS:" : "Device GPS:"}
+            </span>
+            <span className="font-mono font-bold">
+              {activeLocation
+                ? `${activeLocation.latitude.toFixed(4)}, ${activeLocation.longitude.toFixed(4)}`
                 : "28.6139, 77.2090 (Delhi)"}
             </span>
           </div>
@@ -134,11 +157,11 @@ export function InspectionStudio({
           <div className="absolute top-3 left-3 flex items-center gap-2">
             <span className="bg-zinc-900/85 backdrop-blur-xs text-white text-[11px] font-semibold px-2.5 py-1 rounded-md shadow flex items-center gap-1.5">
               <Building2 className="w-3 h-3 text-blue-300" />
-              {hostelId || "Hostel-A"}
+              {activeHostelId || "Hostel-A"}
             </span>
             <span className="bg-zinc-900/85 backdrop-blur-xs text-emerald-300 text-[11px] font-medium px-2.5 py-1 rounded-md shadow flex items-center gap-1">
               <MapPin className="w-3 h-3 text-emerald-400" />
-              {location ? `${location.latitude.toFixed(3)}, ${location.longitude.toFixed(3)}` : "GPS Encoded"}
+              {activeLocation ? `${activeLocation.latitude.toFixed(3)}, ${activeLocation.longitude.toFixed(3)}` : "GPS Encoded"}
             </span>
           </div>
 

@@ -94,7 +94,12 @@ export function InspectionDataTable({ logs = [], onLoadLog }) {
                 <TableRow key={log.id} className="border-b border-zinc-100 hover:bg-zinc-50/50 text-sm">
                   <TableCell className="text-zinc-500 font-mono text-xs">#{log.id}</TableCell>
                   <TableCell className="font-bold text-zinc-800 text-xs">
-                    {log.hostel_id || "Hostel-A"}
+                    <div>{log.hostel_id || "Hostel-A"}</div>
+                    {log.gps_lat != null && log.gps_long != null && (
+                      <div className="text-[10px] text-zinc-500 font-mono font-normal">
+                        📍 {Number(log.gps_lat).toFixed(3)}, {Number(log.gps_long).toFixed(3)}
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell>
                     {imgUrl ? (

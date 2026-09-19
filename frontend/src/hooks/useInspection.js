@@ -425,6 +425,13 @@ export function useInspection() {
         damageType = "Moderate Wear / Needs Cleaning"
       }
 
+      const recordedLat = backendResponse.gps_lat != null
+        ? Number(backendResponse.gps_lat)
+        : (location?.latitude || 28.6139)
+      const recordedLong = backendResponse.gps_long != null
+        ? Number(backendResponse.gps_long)
+        : (location?.longitude || 77.209)
+
       const normalizedResult = {
         ...backendResponse,
         hostel_id: hostelId || "Hostel-A",
@@ -435,6 +442,8 @@ export function useInspection() {
         broken_assets: brokenAssets,
         severity,
         recommendation,
+        gps_lat: recordedLat,
+        gps_long: recordedLong,
         detections: backendResponse.detections || null,
       }
 
@@ -453,8 +462,8 @@ export function useInspection() {
         broken_assets: brokenAssets,
         severity,
         recommendation,
-        gps_lat: location?.latitude || 28.6139,
-        gps_long: location?.longitude || 77.209,
+        gps_lat: recordedLat,
+        gps_long: recordedLong,
         created_at: new Date().toISOString(),
       }
 
@@ -489,6 +498,9 @@ export function useInspection() {
     }
     setPreviewSrc(fullUrl)
     setSelectedFile(null)
+    if (log.hostel_id) {
+      setHostelId(log.hostel_id)
+    }
 
     const damageScore = Number(log.damage_score ?? log.risk_score) || 0
     const severity = log.severity || (damageScore > 75 ? "CRITICAL" : damageScore > 40 ? "MEDIUM" : "LOW")
@@ -496,10 +508,14 @@ export function useInspection() {
     const brokenAssets = !!log.broken_assets
     const damageType = log.damage_type || (severity === "CRITICAL" ? "Critical Structural Defect" : "Facility Inspection")
 
+    const recordedLat = log.gps_lat != null ? Number(log.gps_lat) : null
+    const recordedLong = log.gps_long != null ? Number(log.gps_long) : null
+
     setCurrentResult({
       status: "success",
       inspection_id: log.id,
-      hostel_id: log.hostel_id,
+      hostel_id: log.hostel_id || "Hostel-A",
+      inspector_id: log.inspector_id,
       damage_type: damageType,
       damage_score: damageScore,
       risk_score: damageScore,
@@ -507,7 +523,10 @@ export function useInspection() {
       broken_assets: brokenAssets,
       severity,
       recommendation: log.recommendation || (severity === "CRITICAL" ? "Immediate Repair Required" : "Schedule Maintenance"),
-      image_url: log.image_url,
+      image_url: log.image_url || log.image_path,
+      gps_lat: recordedLat,
+      gps_long: recordedLong,
+      created_at: log.created_at || log.inspection_time,
       detections: {
         cracks: {
           predictions: damageScore > 60
@@ -525,6 +544,7 @@ export function useInspection() {
     setStepTimeline([
       { step: 1, label: `Loaded Historical Record #${log.id}`, status: "completed", time: new Date(log.created_at || Date.now()).toLocaleTimeString() },
       { step: 2, label: `Facility: ${log.hostel_id || 'Hostel-A'} (Severity: ${severity})`, status: "completed" },
+      { step: 3, label: `Audit Location: ${recordedLat != null && recordedLong != null ? `${recordedLat.toFixed(4)}, ${recordedLong.toFixed(4)}` : 'GPS Encoded'}`, status: "completed" },
     ])
     setActiveStep(5)
   }
